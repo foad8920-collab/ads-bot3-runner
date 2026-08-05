@@ -54,11 +54,13 @@ async function checkAndResetCounter(botName) {
     }
 }
 
-// 🛠️ 2. دالة تسجيل النشر الناجح وتحديث المجموعات والعدادات للبوت الثالث
+// 🛠️ 2. دالة تسجيل النشر الناجح وتحديث المجموعات والعدادات للبوت الثالث (معدلة لضبط الوقت الفعلي بدقة)
 async function logPublishSuccess(botName, adId, adTitle, groupName) {
     try {
+        // 🛠️ توليد الوقت المحلي الدقيق بتوقيت السعودية لضمان تطابقه مع وقت النشر الفعلي
         const exactPublishTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Riyadh' })).toISOString();
 
+        // تسجيل المجموعة المنشور فيها في جدول bot_publish_logs مع الوقت المضبوط صراحة
         const { error: insertError } = await supabase
             .from('bot_publish_logs')
             .insert([{
@@ -75,6 +77,7 @@ async function logPublishSuccess(botName, adId, adTitle, groupName) {
             await logToDashboard(`❌ فشل حفظ اللوج في الجدول: ${insertError.message}`, 'error');
         }
 
+        // زيادة العداد اليومي والإجمالي في bot_counters
         const { data } = await supabase
             .from('bot_counters')
             .select('daily_count, total_count')
@@ -107,7 +110,7 @@ app.get('/', (req, res) => res.send(`🚀 FB Bot Dedicated Instance - ${ACCOUNT_
 
 app.get('/restart-bot', async (req, res) => {
     await logToDashboard(`🚨 [${ACCOUNT_NAME}] تم طلب إعادة التشغيل يدوياً من المطور!`, 'error');
-    res.send(`🔄 جاري إعادة تشغيل السيرفر والبوت الخاص بـ ${ACCOUNT_NAME}...`);
+    res.send(`🔄 جاري إعادة تشغيل السيرفر للبوت الخاص بـ ${ACCOUNT_NAME}...`);
     process.exit(1); 
 });
 
@@ -401,7 +404,7 @@ async function pasteTextWithLines(page, postText) {
     }
 }
 
-// 🚀 دالة النشر الفعلي للمجموعة للبوت الثالث
+// 🚀 دالة النشر الفعلي للمجموعة
 async function publishToGroup(page, group, post, imagePath) {
     await warmupSession(page);
 
@@ -541,6 +544,7 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await logToDashboard(`✅ تم النشر في مجموعة البوت بنجاح تام: ${group.name}`, 'success');
 
+    // 🌟 تسجيل عملية النشر في العدادات وسجل اليوم الحي
     await logPublishSuccess(BOT_ID, post.id, post.ad_title, group.name);
 }
 
@@ -555,7 +559,7 @@ async function processOnePostBot3(initialPostData) {
 
     const cookiesRaw = await getSetting('FB_COOKIES_BOT3');
     if (!cookiesRaw) {
-        await logToDashboard(`❌ ملف الكوكيز للبوت الثالث غير موجود في جدول system_settings! (يجب أن يكون المفتاح: FB_COOKIES_BOT3)`, 'error');
+        await logToDashboard(`❌ ملف الكوكيز للبوت الثالث غير موجود في جدول system_settings!`, 'error');
         return;
     }
 
@@ -656,6 +660,18 @@ async function processOnePostBot3(initialPostData) {
         await logToDashboard(`🍪 تم حقن الكوكيز بنجاح وتأمين الجلسة!`, 'success');
 
         while (true) {
+            // 🛑 [مكان الفحص الأمني 1]: التحقق من حالة كرت الإيقاف في bot_counters
+            const { data: counterStatus } = await supabase
+                .from('bot_counters')
+                .select('status')
+                .eq('bot_name', BOT_ID)
+                .single();
+
+            if (counterStatus && counterStatus.status === 'IDLE') {
+                await logToDashboard(`🛑 تم رصد حالة الإيقاف (IDLE) للبوت الثالث، يتوقف عن العمل فوراً ويُغلق المتصفح...`, 'warn');
+                process.exit(0);
+            }
+
             const { data: freshData } = await supabase
                 .from('publish_queue')
                 .select('*')
@@ -667,13 +683,26 @@ async function processOnePostBot3(initialPostData) {
             if (freshData.status === 'stopped') {
                 await logToDashboard(`🛑 تم إيقاف البوت الثالث يدوياً بطلب من المستخدم، جاري إنهاء الجلسة السحابية بالكامل!`, 'info');
                 await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
-                process.exit(0);
+                process.exit(0); 
             }
 
             while (freshData.status === 'paused') {
                 await logToDashboard(`⏸️ البوت الثالث في حالة إيقاف مؤقت (Paused)، يرجى الانتظار...`, 'info');
                 await supabase.from('bot_counters').update({ status: 'PAUSED' }).eq('bot_name', BOT_ID);
                 await sleep(10000);
+
+                // 🛑 [مكان الفحص الأمني أثناء التوقف المؤقت]:
+                const { data: pauseCounterCheck } = await supabase
+                    .from('bot_counters')
+                    .select('status')
+                    .eq('bot_name', BOT_ID)
+                    .single();
+
+                if (pauseCounterCheck && pauseCounterCheck.status === 'IDLE') {
+                    await logToDashboard(`🛑 تم رصد حالة الإيقاف (IDLE) أثناء التوقف المؤقت، جاري إنهاء الجلسة فوراً...`, 'warn');
+                    process.exit(0);
+                }
+
                 const { data: pauseCheck } = await supabase
                     .from('publish_queue')
                     .select('status')
@@ -761,21 +790,21 @@ async function processOnePostBot3(initialPostData) {
                 await logToDashboard(`🎯 تم سحب المجموعة (${targetGroup.name}) وحذفها من الطابور الرئيسي لضمان عدم التكرار...`, 'success');
             }
 
-            // 💡 --- إضافة فحص التكرار المعدل والمحسّن (خاص بـ Bot3) ---
-const { data: logData, error: logError } = await supabase
-    .from('bot_publish_logs')
-    .select('id')
-    .eq('bot_name', BOT_ID)             // 1. التأكد من أن النشر تم عن طريق البوت الثالث حصراً
-    .eq('ad_id', initialPostData.id)     // 2. مطابقة رقم الإعلان الحالي
-    .eq('group_name', targetGroup.name)  // 3. مطابقة اسم المجموعة
-    .eq('status', 'SUCCESS');            // 4. أن تكون حالة النشر ناجحة
+            // 💡 --- فحص التكرار المعدل والمحسّن (خاص بـ Bot3) ---
+            const { data: logData, error: logError } = await supabase
+                .from('bot_publish_logs')
+                .select('id')
+                .eq('bot_name', BOT_ID)             // 1. التأكد من أن النشر تم عن طريق البوت الثالث حصراً
+                .eq('ad_id', initialPostData.id)     // 2. مطابقة رقم الإعلان الحالي
+                .eq('group_name', targetGroup.name)  // 3. مطابقة اسم المجموعة
+                .eq('status', 'SUCCESS');            // 4. أن تكون حالة النشر ناجحة
 
-if (logData && logData.length > 0) {
-    await logToDashboard(`🛡️ [حماية] الإعلان (#${initialPostData.id}) نُشر مسبقاً في المجموعة (${targetGroup.name}) بواسطة ${BOT_ID}! سيتم تخطيها...`, 'warn');
-    await supabase.from('publish_queue').update({ bot3_group: null }).eq('id', initialPostData.id);
-    continue;
-}
-// -----------------------------------------------------------
+            if (logData && logData.length > 0) {
+                await logToDashboard(`🛡️ [حماية] الإعلان (#${initialPostData.id}) نُشر مسبقاً في المجموعة (${targetGroup.name}) بواسطة ${BOT_ID}! سيتم تخطيها...`, 'warn');
+                await supabase.from('publish_queue').update({ bot3_group: null }).eq('id', initialPostData.id);
+                continue;
+            }
+            // -----------------------------------------------------------
 
             const page = await context.newPage();
             try {
@@ -888,6 +917,18 @@ async function startBot3Engine() {
 
     while (true) {
         try {
+            // 🛑 [مكان الفحص الأمني 2]: فحص كرت الإيقاف في المحرك الرئيسي قبل البحث عن الإعلانات
+            const { data: counterStatus } = await supabase
+                .from('bot_counters')
+                .select('status')
+                .eq('bot_name', BOT_ID)
+                .single();
+
+            if (counterStatus && counterStatus.status === 'IDLE') {
+                await logToDashboard(`🛑 تم رصد حالة الإيقاف (IDLE) للبوت الثالث في المحرك الرئيسي، جاري الخروج فوراً...`, 'warn');
+                process.exit(0);
+            }
+
             const { data, error } = await supabase
                 .from('publish_queue')
                 .select('*')

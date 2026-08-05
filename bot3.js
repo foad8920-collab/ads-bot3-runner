@@ -761,18 +761,21 @@ async function processOnePostBot3(initialPostData) {
                 await logToDashboard(`🎯 تم سحب المجموعة (${targetGroup.name}) وحذفها من الطابور الرئيسي لضمان عدم التكرار...`, 'success');
             }
 
-            // 💡 فحص التكرار
-            const { data: logData } = await supabase
-                .from('bot_publish_logs')
-                .select('id')
-                .eq('ad_id', initialPostData.id)
-                .eq('group_name', targetGroup.name);
+            // 💡 --- إضافة فحص التكرار المعدل والمحسّن (خاص بـ Bot3) ---
+const { data: logData, error: logError } = await supabase
+    .from('bot_publish_logs')
+    .select('id')
+    .eq('bot_name', BOT_ID)             // 1. التأكد من أن النشر تم عن طريق البوت الثالث حصراً
+    .eq('ad_id', initialPostData.id)     // 2. مطابقة رقم الإعلان الحالي
+    .eq('group_name', targetGroup.name)  // 3. مطابقة اسم المجموعة
+    .eq('status', 'SUCCESS');            // 4. أن تكون حالة النشر ناجحة
 
-            if (logData && logData.length > 0) {
-                await logToDashboard(`🛡️ [حماية] تم اكتشاف أن المجموعة (${targetGroup.name}) نُشر فيها مسبقاً بنجاح! سيتم تخطيها وحذفها...`, 'warn');
-                await supabase.from('publish_queue').update({ bot3_group: null }).eq('id', initialPostData.id);
-                continue;
-            }
+if (logData && logData.length > 0) {
+    await logToDashboard(`🛡️ [حماية] الإعلان (#${initialPostData.id}) نُشر مسبقاً في المجموعة (${targetGroup.name}) بواسطة ${BOT_ID}! سيتم تخطيها...`, 'warn');
+    await supabase.from('publish_queue').update({ bot3_group: null }).eq('id', initialPostData.id);
+    continue;
+}
+// -----------------------------------------------------------
 
             const page = await context.newPage();
             try {

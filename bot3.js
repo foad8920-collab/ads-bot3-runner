@@ -660,7 +660,7 @@ async function processOnePostBot3(initialPostData) {
         await logToDashboard(`🍪 تم حقن الكوكيز بنجاح وتأمين الجلسة!`, 'success');
 
         while (true) {
-            // 🛑 [مكان الفحص الأمني 1]: التحقق من حالة كرت الإيقاف في bot_counters
+            // 🛑 [فحص أمني]: التحقق من حالة كرت الإيقاف في bot_counters
             const { data: counterStatus } = await supabase
                 .from('bot_counters')
                 .select('status')
@@ -691,7 +691,6 @@ async function processOnePostBot3(initialPostData) {
                 await supabase.from('bot_counters').update({ status: 'PAUSED' }).eq('bot_name', BOT_ID);
                 await sleep(10000);
 
-                // 🛑 [مكان الفحص الأمني أثناء التوقف المؤقت]:
                 const { data: pauseCounterCheck } = await supabase
                     .from('bot_counters')
                     .select('status')
@@ -912,12 +911,16 @@ async function resetStuckBot3Posts() {
 
 async function startBot3Engine() {
     await logToDashboard(`🚀 تم تشغيل محرك البوت الثالث الذاتي بنجاح...`, 'success');
+    
+    // 💡 التحديث الفوري للحالة لمنع التوقف الخاطئ عند البداية
+    await supabase.from('bot_counters').update({ status: 'RUNNING' }).eq('bot_name', BOT_ID);
+
     await resetStuckBot3Posts();
     await cleanOldLogs();
 
     while (true) {
         try {
-            // 🛑 [مكان الفحص الأمني 2]: فحص كرت الإيقاف في المحرك الرئيسي قبل البحث عن الإعلانات
+            // 🛑 فحص كرت الإيقاف في المحرك الرئيسي
             const { data: counterStatus } = await supabase
                 .from('bot_counters')
                 .select('status')
@@ -972,7 +975,6 @@ async function startBot3Engine() {
             }
 
             await supabase.from('publish_queue').update({ status: 'processing' }).eq('id', postToRun.id);
-            await supabase.from('bot_counters').update({ status: 'RUNNING' }).eq('bot_name', BOT_ID);
 
             await processOnePostBot3(postToRun);
 

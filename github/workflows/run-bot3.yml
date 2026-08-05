@@ -1,0 +1,37 @@
+name: Run Facebook Bot 3
+
+on:
+  workflow_dispatch:
+
+# 🔒 منع التزامن وتكرار التشغيل: يوقف أي جلسة سابقة شغالة للبوت 3 فوراً عند إطلاق جلسة جديدة
+concurrency:
+  group: bot3-execution-group
+  cancel-in-progress: true
+
+jobs:
+  run-bot3:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 جلب كود المستودع
+        uses: actions/checkout@v4
+
+      - name: 🟢 إعداد بيئة Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 📦 تثبيت المكتبات (Dependencies)
+        run: |
+          npm init -y
+          npm install playwright @supabase/supabase-js axios ws express
+
+      - name: 🌐 تثبيت متصفح Chromium الخاص بـ Playwright
+        run: |
+          npx playwright install --with-deps chromium
+
+      - name: 🚀 تشغيل البوت الثالث (bot3.js)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: node bot3.js

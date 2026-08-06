@@ -446,7 +446,7 @@ async function publishToGroup(page, group, post, imagePath) {
     const opened = await openPostBox(page);
     if (!opened) throw new Error('لم يتم العثور على مربع النشر');
 
-    await sleep(randomDelay(6, 12)); 
+    await sleep(randomDelay(5, 10)); 
 
     if (imagePath) {
         const imageTriggerSelectors = [
@@ -568,8 +568,8 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await logToDashboard(`✅ تم النشر في مجموعة البوت بنجاح تام: ${group.name}`, 'success');
 
-    // 🌟 تسجيل عملية النشر مع النص الفعلي المصاغ
-    await logPublishSuccess(BOT_ID, post.id, postText, group.name);
+    // 🌟 تسجيل عملية النشر في العدادات وسجل اليوم الحي
+    logPublishSuccess(BOT_ID, post.id, postText, group.name);
 }
 
 // 🔄 دالة معالجة إعلان واحد للبوت الثالث
@@ -790,7 +790,7 @@ async function processOnePostBot3(initialPostData) {
 
             // 💡 --- فحص التكرار المعدل والمحسّن (خاص بـ Bot3) ---
             const { data: logData, error: logError } = await supabase
-      0         .from('bot_publish_logs')
+                .from('bot_publish_logs')
                 .select('id')
                 .eq('bot_name', BOT_ID)              // 1. التأكد من أن النشر تم عن طريق البوت الثالث حصراً
                 .eq('ad_id', initialPostData.id)     // 2. مطابقة رقم الإعلان الحالي
@@ -841,9 +841,8 @@ async function processOnePostBot3(initialPostData) {
                 }
 
                 if (currentRemaining.length > 0) {
-                    // ⏱️ فواصل أمان طويلة ومحاكية للبشر للبوت الثالث (من 5 إلى 10 دقائق)
-                    const longBreak = randomDelay(300, 600);
-                    await logToDashboard(`⏳ استراحة أمان بشرية للبوت 3 لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
+                    const longBreak = randomDelay(180, 300);
+                    await logToDashboard(`⏳ استراحة أمان لحماية الحساب لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
                     await sleep(longBreak);
                 }
 
@@ -912,10 +911,6 @@ async function resetStuckBot3Posts() {
 async function startBot3Engine() {
     await logToDashboard(`🚀 تم تشغيل محرك البوت الثالث الذاتي بنجاح...`, 'success');
     
-    // 💡 تأخير انطلاق البوت الثالث لمدة 90 ثانية لضمان الانفصال التام عن البوت الأول والثاني
-    await logToDashboard(`⏳ [Human Stagger Delay] انتظار 90 ثانية قبل بدء المحرك لمنع التزامن وسلوك البوتات...`, 'info');
-    await sleep(90000);
-
     // 💡 التحديث الفوري للحالة لمنع التوقف الخاطئ عند البداية
     await supabase.from('bot_counters').update({ status: 'RUNNING' }).eq('bot_name', BOT_ID);
 
@@ -924,7 +919,18 @@ async function startBot3Engine() {
 
     while (true) {
         try {
-            // 1️⃣ قراءة الطابور أولاً لمعرفة هل أضاف "النشر الذكي" إعلاناً جديداً
+            // 🛑 فحص كرت الإيقاف في المحرك الرئيسي
+            const { data: counterStatus } = await supabase
+                .from('bot_counters')
+                .select('status')
+                .eq('bot_name', BOT_ID)
+                .single();
+
+            if (counterStatus && counterStatus.status === 'IDLE') {
+                await logToDashboard(`🛑 تم رصد حالة الإيقاف (IDLE) للبوت الثالث في المحرك الرئيسي، جاري الخروج فوراً...`, 'warn');
+                process.exit(0);
+            }
+
             const { data, error } = await supabase
                 .from('publish_queue')
                 .select('*')
@@ -953,32 +959,29 @@ async function startBot3Engine() {
                         try { hasBotGroup = !!JSON.parse(post.bot3_group); } catch(e){}
                     }
 
-                    // التأكد من وجود مجموعات وأن الإعلان ليس موقوفاً يدوياً
-                    if ((groups.length > 0 || hasBotGroup) && post.status !== 'stopped' && post.status !== 'paused') {
+                    if (groups.length > 0 || hasBotGroup) {
                         postToRun = post;
                         break;
                     }
                 }
             }
 
-            // 2️⃣ إذا وجد إعلان جديد أضيف بواسطة النشر الذكي، يفعّل العداد فوراً إلى RUNNING ويبدأ النشر
-            if (postToRun) {
-                await supabase.from('bot_counters').update({ status: 'RUNNING' }).eq('bot_name', BOT_ID);
-                await supabase.from('publish_queue').update({ status: 'processing' }).eq('id', postToRun.id);
-
-                await processOnePostBot3(postToRun);
-
-                await supabase.from('publish_queue').update({ status: 'stopped' }).eq('id', postToRun.id);
-
-                const macroDelay = randomDelay(1200, 2400);
-                await logToDashboard(`⏳ استراحة الإعلانات الكبرى للبوت 3: انتظار ${Math.round(macroDelay / 1000 / 60)} دقيقة...`, 'info');
-                await sleep(macroDelay);
-            } else {
-                // 3️⃣ إذا لم يجد أي إعلانات في الطابور، يضع الحالة IDLE وينهي الجلسة بأمان
+            if (!postToRun) {
                 await logToDashboard(`🎉 اكتملت جميع المهام في الطابور، تم إنهاء الجلسة السحابية بنجاح!`, 'success');
                 await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
-                await forceKillProcess('لا توجد إعلانات تحتوي على مجموعات قيد الانتظار');
+                console.log("✅ لا توجد إعلانات تحتوي على مجموعات قيد الانتظار، جاري إغلاق السكربت...");
+                process.exit(0);
             }
+
+            await supabase.from('publish_queue').update({ status: 'processing' }).eq('id', postToRun.id);
+
+            await processOnePostBot3(postToRun);
+
+            await supabase.from('publish_queue').update({ status: 'stopped' }).eq('id', postToRun.id);
+
+            const macroDelay = randomDelay(900, 1800);
+            await logToDashboard(`⏳ استراحة الإعلانات الكبرى للبوت 3: انتظار ${Math.round(macroDelay / 1000 / 60)} دقيقة...`, 'info');
+            await sleep(macroDelay);
 
         } catch (err) {
             await logToDashboard(`❌ خطأ في محرك البوت الثالث الرئيسي: ${err.message}`, 'error');

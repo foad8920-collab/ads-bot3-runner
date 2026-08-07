@@ -277,7 +277,7 @@ async function warmupSession(page) {
             throw new Error('انتهت جلسة تسجيل الدخول أو يوجد Checkpoint للحساب');
         }
 
-        // محاكاة سلوك تصفح أعمق: نزول، توقف، صعود طفيف ثم نزول إضافي
+        // محاكاة سلوك تصفح أعمق للحساب الجديد: نزول، توقف، صعود طفيف ثم نزول إضافي
         await page.mouse.move(Math.floor(Math.random() * 400) + 150, Math.floor(Math.random() * 300) + 100);
         await page.evaluate(() => window.scrollBy(0, Math.floor(Math.random() * 350) + 200));
         await sleep(randomDelay(6, 10));
@@ -611,6 +611,12 @@ async function processOnePostBot3(initialPostData) {
         return;
     }
 
+    // 💡 --- أطول تأخير أمان ابتدائي لضمان أنه ينطلق كـ "آخر بوت" بعد البوتين الأول والثاني ---
+    const initialOffsetDelay = randomDelay(480, 720); // تأخير بين 8 إلى 12 دقيقة
+    await logToDashboard(`⏳ [تنسيق التباعد] انتظار أمان مخصص للبوت الثالث والأخير لمدة ${Math.round(initialOffsetDelay / 1000 / 60)} دقائق لحماية الحساب الجديد وضمان عدم التزامن...`, 'info');
+    await sleep(initialOffsetDelay);
+    // ------------------------------------------------------------------------------------------
+
     await logToDashboard(`🚀 بدأ معالجة الإعلان (#${initialPostData.id}: ${initialPostData.ad_title})...`, 'info');
 
     let mediaUrl = '';
@@ -824,8 +830,10 @@ async function processOnePostBot3(initialPostData) {
             const page = await context.newPage();
             try {
                 const publishTask = publishToGroup(page, targetGroup, freshData, imagePath);
+                
+                // 💡 رفع مهلة الأمان الكبرى لـ Deadlock Timeout إلى 15 دقيقة (900,000 مللي ثانية) بالكامل
                 const timeoutTask = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('تجمّد مفاجئ أو بطء شديد أثناء معالجة الصفحة (Deadlock Timeout)')), 360000)
+                    setTimeout(() => reject(new Error('تجمّد مفاجئ أو بطء شديد أثناء معالجة الصفحة (Deadlock Timeout)')), 900000)
                 );
 
                 await Promise.race([publishTask, timeoutTask]);

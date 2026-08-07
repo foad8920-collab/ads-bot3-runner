@@ -15,10 +15,22 @@ const TEMP_DIR = path.join(os.tmpdir(), 'bot3-temp-files');
 const ACCOUNT_NAME = 'الحساب (3)';
 const BOT_ID = 'bot3'; // المعرف الخاص بهذا البوت في جدول العدادات
 
-// 🛑 دالة الإيقاف الفوري للجلسة والسيرفر (تتعامل مع Render و GitHub Actions)
+// 🛑 دالة الإيقاف الفوري للجلسة والسيرفر مع تحويل الحالة إلى IDLE وإلغاء GitHub Action
 async function forceKillProcess(reason = 'طلب إيقاف من المستخدم') {
-    await logToDashboard(`🛑 ${reason} | جاري إنهاء العمل وإغلاق الجلسة فوراً...`, 'warn');
+    await logToDashboard(`🛑 ${reason} | جاري تحويل الحالة إلى IDLE وإنهاء الجلسة فوراً...`, 'warn');
     
+    try {
+        // 🔄 1. تحويل حالة البوت في جدول العدادات إلى IDLE فوراً
+        await supabase
+            .from('bot_counters')
+            .update({ status: 'IDLE' })
+            .eq('bot_name', BOT_ID);
+        await logToDashboard(`✅ تم تحويل حالة ${BOT_ID} إلى (IDLE) في قاعدة البيانات.`, 'info');
+    } catch (e) {
+        console.error("فشل تحديث حالة البوت إلى IDLE في قاعدة البيانات:", e.message);
+    }
+
+    // 🛑 2. إلغاء الجلسة في GitHub Actions فوراً
     if (process.env.GITHUB_ACTIONS && process.env.GITHUB_TOKEN && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID) {
         try {
             await axios.post(
@@ -707,7 +719,7 @@ async function processOnePostBot3(initialPostData) {
         await logToDashboard(`🍪 تم حقن الكوكيز بنجاح وتأمين الجلسة!`, 'success');
 
         while (true) {
-            // 🛑 1. فحص كروت الإيقاف الفورية الشاملة
+            // 🛑 1. فحص كروت الإيقاف الفورية المخصصة لـ bot3 حصراً
             const { data: counterStatus } = await supabase
                 .from('bot_counters')
                 .select('status')
@@ -768,22 +780,29 @@ async function processOnePostBot3(initialPostData) {
             }
 
             if (groups.length === 0 && !botGroup) {
-                const { data: finalCheck } = await supabase
+                // 💡 التثبت من اكتمال كافة المجموعات لجميع البوتات قبل تغيير حالة الإعلان في الطابور
+                const { data: checkAllBots } = await supabase
                     .from('publish_queue')
-                    .select('failed_count')
+                    .select('bot1_group, bot2_group, bot3_group, failed_count')
                     .eq('id', initialPostData.id)
                     .single();
 
-                const finalFailed = finalCheck?.failed_count || 0;
-                const finalStatus = finalFailed > 0 ? 'failed' : 'published';
+                const hasOtherBotGroups = checkAllBots && (checkAllBots.bot1_group || checkAllBots.bot2_group);
 
-                await logToDashboard(`🎉 اكتملت جميع المجموعات للحساب (3)! الحالة النهائية: (${finalStatus})`, 'success');
+                if (!hasOtherBotGroups) {
+                    const finalFailed = checkAllBots?.failed_count || 0;
+                    const finalStatus = finalFailed > 0 ? 'failed' : 'published';
 
-                await supabase.from('publish_queue').update({
-                    status: finalStatus,
-                    bot3_group: null,
-                    ai_final_text3: null
-                }).eq('id', initialPostData.id);
+                    await logToDashboard(`🎉 اكتملت جميع المجموعات لجميع البوتات! الحالة النهائية: (${finalStatus})`, 'success');
+
+                    await supabase.from('publish_queue').update({
+                        status: finalStatus,
+                        bot3_group: null,
+                        ai_final_text3: null
+                    }).eq('id', initialPostData.id);
+                } else {
+                    await logToDashboard(`🎉 اكتملت جميع المجموعات المخصصة للبوت (3)! ينتهي البوت الثالث مع استمرار البوتات الأخرى...`, 'success');
+                }
 
                 await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
                 break;
@@ -793,7 +812,7 @@ async function processOnePostBot3(initialPostData) {
 
             if (botGroup) {
                 targetGroup = botGroup;
-                await logToDashboard(`🎯 وُجدت مجموعة معلقة في قروب البوت (${targetGroup.name})، جاري استكمال النشر فيها...`, 'info');
+                await logToDashboard(`🎯 وُجدت مجموعة معلقة في قروب البوت (${targetGroup.name})، جاري التحقق منها...`, 'info');
             } else {
                 targetGroup = groups[0];
                 const remainingGroups = groups.slice(1);
@@ -811,8 +830,8 @@ async function processOnePostBot3(initialPostData) {
                 await logToDashboard(`🎯 تم سحب المجموعة (${targetGroup.name}) وحذفها من الطابور الرئيسي لضمان عدم التكرار...`, 'success');
             }
 
-            // 💡 --- فحص التكرار المعدل والمحسّن (خاص بـ Bot3) ---
-            const { data: logData, error: logError } = await supabase
+            // 💡 --- فحص التكرار وحل الحلقة التكرارية جذرياً (خاص بـ Bot3) ---
+            const { data: logData } = await supabase
                 .from('bot_publish_logs')
                 .select('id')
                 .eq('bot_name', BOT_ID)              // 1. التأكد من أن النشر تم عن طريق البوت الثالث حصراً
@@ -821,9 +840,18 @@ async function processOnePostBot3(initialPostData) {
                 .eq('status', 'SUCCESS');            // 4. أن تكون حالة النشر ناجحة
 
             if (logData && logData.length > 0) {
-                await logToDashboard(`🛡️ [حماية] الإعلان (#${initialPostData.id}) نُشر مسبقاً في المجموعة (${targetGroup.name}) بواسطة ${BOT_ID}! سيتم تخطيها...`, 'warn');
-                await supabase.from('publish_queue').update({ bot3_group: null, ai_final_text3: null }).eq('id', initialPostData.id);
-                continue;
+                await logToDashboard(`🛡️ [حماية] الإعلان (#${initialPostData.id}) نُشر مسبقاً في المجموعة (${targetGroup.name}) بواسطة ${BOT_ID}! جاري حذفها والتخطي فوراً...`, 'warn');
+                
+                // 🧹 1. تصفير ومسح المجموعة المعلقة من قاعدة البيانات فوراً
+                await supabase.from('publish_queue').update({ 
+                    bot3_group: null, 
+                    ai_final_text3: null 
+                }).eq('id', initialPostData.id);
+
+                // 🧹 2. تصفير المتغير المحلي داخل ذاكرة السكربت فوراً لمنع التكرار بالحلقة
+                botGroup = null; 
+                await sleep(2000);
+                continue; // الانتقال للمجموعة التالية مباشرة دون إعادة قراءة نفس المجموعة
             }
             // -----------------------------------------------------------
 
@@ -945,7 +973,7 @@ async function startBot3Engine() {
 
     while (true) {
         try {
-            // 🛑 فحص كرت الإيقاف في المحرك الرئيسي
+            // 🛑 فحص كرت الإيقاف في المحرك الرئيسي لـ bot3 حصراً
             const { data: counterStatus } = await supabase
                 .from('bot_counters')
                 .select('status')

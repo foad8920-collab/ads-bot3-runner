@@ -265,25 +265,31 @@ async function downloadImage(imageUrl) {
     return imagePath;
 }
 
-// 🎯 دالة إحماء الجلسة المتقدمة بأسلوب محاكي للبشر (خاص للبوت الثالث)
+// 🎯 دالة إحماء الجلسة الحذرة جداً للمستجدين (محاكاة حساب جديد للبوت الثالث)
 async function warmupSession(page) {
     try {
-        await logToDashboard(`☕ [Warm-up Human-Like] تسجيل الدخول وتصفح آخر الأخبار لتنويع السلوك للبوت الثالث...`, 'info');
+        await logToDashboard(`☕ [Warm-up New Account Safety] تصفح أطول وتمرير عشوائي مريح لحماية الحساب الجديد...`, 'info');
         
         await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 45000 });
-        await sleep(randomDelay(10, 15));
+        await sleep(randomDelay(12, 18));
 
         if (page.url().includes('login') || page.url().includes('checkpoint')) {
             throw new Error('انتهت جلسة تسجيل الدخول أو يوجد Checkpoint للحساب');
         }
 
-        // محاكاة التصفح والتمرير البشري في الصفحة الرئيسية
-        await page.evaluate(() => window.scrollBy(0, Math.floor(Math.random() * 300) + 200));
-        await sleep(randomDelay(5, 8));
-        await page.evaluate(() => window.scrollBy(0, Math.floor(Math.random() * 400) + 300));
+        // محاكاة سلوك تصفح أعمق: نزول، توقف، صعود طفيف ثم نزول إضافي
+        await page.mouse.move(Math.floor(Math.random() * 400) + 150, Math.floor(Math.random() * 300) + 100);
+        await page.evaluate(() => window.scrollBy(0, Math.floor(Math.random() * 350) + 200));
         await sleep(randomDelay(6, 10));
+        
+        await page.evaluate(() => window.scrollBy(0, -Math.floor(Math.random() * 100) - 50)); // صعود طفيف محاكي للبشر
+        await sleep(randomDelay(3, 5));
 
-        await logToDashboard(`✅ تم إحماء الجلسة ومحاكاة السلوك البشري بنجاح!`, 'success');
+        await page.mouse.move(Math.floor(Math.random() * 500) + 200, Math.floor(Math.random() * 400) + 200);
+        await page.evaluate(() => window.scrollBy(0, Math.floor(Math.random() * 500) + 200));
+        await sleep(randomDelay(7, 12));
+
+        await logToDashboard(`✅ تم إحماء الجلسة وتنويع السلوك للبوت الثالث بنجاح!`, 'success');
     } catch (e) {
         if (e.message.includes('Checkpoint')) throw e;
         await logToDashboard(`⚠️ تنبيه أثناء الإحماء: ${e.message}`, 'warn');
@@ -291,8 +297,9 @@ async function warmupSession(page) {
 }
 
 async function openPostBox(page) {
-    await logToDashboard(`⏳ إعطاء فيسبوك مهلة 25 ثانية لبناء الأزرار ومربع النشر...`, 'info');
-    await sleep(25000); 
+    const initialWait = randomDelay(22, 28);
+    await logToDashboard(`⏳ إعطاء فيسبوك مهلة ${Math.round(initialWait/1000)} ثانية لبناء الأزرار ومربع النشر...`, 'info');
+    await sleep(initialWait); 
 
     const discussionTabs = [
         'div[role="tab"]:has-text("مناقشة")',
@@ -307,8 +314,9 @@ async function openPostBox(page) {
             const tabBtn = page.locator(tabSel).first();
             if (await tabBtn.count() > 0 && await tabBtn.isVisible()) {
                 await tabBtn.click({ timeout: 5000, force: true });
-                await logToDashboard(`🔄 تم التبديل لتبويب (مناقشة)، ننتظر 20 ثانية لاستقرار التبويب...`, 'info');
-                await sleep(20000); 
+                const tabWait = randomDelay(18, 25);
+                await logToDashboard(`🔄 تم التبديل لتبويب (مناقشة)، ننتظر ${Math.round(tabWait/1000)} ثانية لاستقرار التبويب...`, 'info');
+                await sleep(tabWait); 
                 break;
             }
         } catch (e) {}
@@ -347,9 +355,16 @@ async function openPostBox(page) {
         try {
             const element = page.locator(selector).first();
             if (await element.count() > 0 && await element.isVisible()) {
+                const box = await element.boundingBox();
+                if (box) {
+                    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+                    await sleep(randomDelay(2, 4));
+                }
                 await element.click({ timeout: 6000, force: true });
-                await logToDashboard(`⏳ تم النقر لفتح نافذة المنشور، ننتظر 20 ثانية لتفتح النافذة براحتها...`, 'info');
-                await sleep(20000); 
+                
+                const postOpenWait = randomDelay(20, 26);
+                await logToDashboard(`⏳ تم النقر لفتح نافذة المنشور، ننتظر ${Math.round(postOpenWait/1000)} ثانية لتفتح النافذة براحتها...`, 'info');
+                await sleep(postOpenWait); 
 
                 const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة'];
                 for (const cBtn of confirmBtns) {
@@ -357,7 +372,7 @@ async function openPostBox(page) {
                         const btn = page.locator(cBtn).first();
                         if (await btn.count() > 0 && await btn.isVisible()) {
                             await btn.click({ timeout: 3000, force: true });
-                            await sleep(3000);
+                            await sleep(randomDelay(2, 5));
                         }
                     } catch(e){}
                 }
@@ -371,7 +386,7 @@ async function openPostBox(page) {
 }
 
 async function pasteTextWithLines(page, postText) {
-    await sleep(6000); 
+    await sleep(randomDelay(6, 9)); 
 
     const targetSelectors = [
         'div[role="dialog"] div[role="textbox"]',
@@ -400,7 +415,7 @@ async function pasteTextWithLines(page, postText) {
     if (textbox) {
         try {
             await textbox.click({ timeout: 6000, force: true });
-            await sleep(3000); 
+            await sleep(randomDelay(3, 5)); 
             await page.evaluate(async (text) => {
                 await navigator.clipboard.writeText(text);
             }, postText);
@@ -420,7 +435,7 @@ async function pasteTextWithLines(page, postText) {
                 activeInput.click();
             }
         });
-        await sleep(3000);
+        await sleep(randomDelay(3, 5));
         await page.keyboard.insertText(postText);
         await logToDashboard(`✅ تم إدخال النص بطريقة البديلة (insertText)`, 'success');
     } catch(e) {
@@ -436,8 +451,9 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     
-    await logToDashboard(`⏳ تم تحميل الصفحة، ننتظر 45 ثانية كاملة لاستقرار عناصر الصفحة وبناء السكربتات...`, 'info');
-    await sleep(45000); 
+    const pageLoadWait = randomDelay(40, 52);
+    await logToDashboard(`⏳ تم تحميل الصفحة، ننتظر ${Math.round(pageLoadWait/1000)} ثانية كاملة لاستقرار عناصر الصفحة وبناء السكربتات...`, 'info');
+    await sleep(pageLoadWait); 
 
     if (page.url().includes('login') || page.url().includes('checkpoint')) {
         throw new Error('انتهت جلسة تسجيل الدخول أو يوجد Checkpoint للحساب');
@@ -446,7 +462,7 @@ async function publishToGroup(page, group, post, imagePath) {
     const opened = await openPostBox(page);
     if (!opened) throw new Error('لم يتم العثور على مربع النشر');
 
-    await sleep(randomDelay(5, 10)); 
+    await sleep(randomDelay(6, 12)); 
 
     if (imagePath) {
         const imageTriggerSelectors = [
@@ -464,7 +480,7 @@ async function publishToGroup(page, group, post, imagePath) {
                 const trigElement = page.locator(trigSel).first();
                 if (await trigElement.count() > 0 && await trigElement.isVisible()) {
                     await trigElement.click({ timeout: 6000, force: true });
-                    await sleep(5000); 
+                    await sleep(randomDelay(5, 8)); 
                     break;
                 }
             } catch (e) {}
@@ -488,9 +504,9 @@ async function publishToGroup(page, group, post, imagePath) {
 
         if (isFileInjected) {
             const isVideoFile = imagePath.endsWith('.mp4') || imagePath.endsWith('.mov');
-            const waitTime = isVideoFile ? 75000 : 30000;
+            const waitTime = isVideoFile ? randomDelay(70, 90) : randomDelay(30, 40);
 
-            await logToDashboard(`🖼️ تم حقن مسار الملف، ننتظر ${waitTime/1000} ثانية لرفع الملف...`, 'success');
+            await logToDashboard(`🖼️ تم حقن مسار الملف، ننتظر ${Math.round(waitTime/1000)} ثانية لرفع الملف...`, 'success');
             await sleep(waitTime);
 
             try {
@@ -498,12 +514,13 @@ async function publishToGroup(page, group, post, imagePath) {
                 await logToDashboard(`✅ ظهرت معاينة المرفق بنجاح`, 'success');
             } catch (e) {}
 
-            await logToDashboard(`⏳ ننتظر 35 ثانية إضافية لاستقرار المعاينة...`, 'info');
-            await sleep(35000); 
+            const previewWait = randomDelay(28, 38);
+            await logToDashboard(`⏳ ننتظر ${Math.round(previewWait/1000)} ثانية إضافية لاستقرار المعاينة...`, 'info');
+            await sleep(previewWait); 
         }
     }
     
-    await sleep(6000); 
+    await sleep(randomDelay(6, 9)); 
 
     let postText = post.ai_final_text3 || '';
     
@@ -529,11 +546,13 @@ async function publishToGroup(page, group, post, imagePath) {
 
     let fbUrlCheck = post.facebook_url || '';
     if (fbUrlCheck.trim() !== '' || postText.includes('facebook.com')) {
-        await logToDashboard(`⏳ تم إدراج رابط فيسبوك، ننتظر 60 ثانية كاملة ليتفاعل النظام وتظهر المعاينة...`, 'info');
-        await sleep(60000);
+        const linkWait = randomDelay(55, 70);
+        await logToDashboard(`⏳ تم إدراج رابط فيسبوك، ننتظر ${Math.round(linkWait/1000)} ثانية كاملة ليتفاعل النظام وتظهر المعاينة...`, 'info');
+        await sleep(linkWait);
     } else {
-        await logToDashboard(`⏳ تم لصق النص، ننتظر 35 ثانية ليتفاعل النظام مع النص المُدخل...`, 'info');
-        await sleep(35000); 
+        const textWait = randomDelay(30, 42);
+        await logToDashboard(`⏳ تم لصق النص، ننتظر ${Math.round(textWait/1000)} ثانية ليتفاعل النظام مع النص المُدخل...`, 'info');
+        await sleep(textWait); 
     }
 
     const publishButtons = [
@@ -550,6 +569,11 @@ async function publishToGroup(page, group, post, imagePath) {
         try {
             const button = page.locator(btn).last();
             if (await button.count() > 0 && await button.isVisible()) {
+                const btnBox = await button.boundingBox();
+                if (btnBox) {
+                    await page.mouse.move(btnBox.x + btnBox.width / 2, btnBox.y + btnBox.height / 2);
+                    await sleep(randomDelay(2, 4));
+                }
                 await button.click({ timeout: 8000, force: true });
                 published = true;
                 await logToDashboard(`🚀 تم الضغط على زر النشر النهائي`, 'success');
@@ -561,9 +585,9 @@ async function publishToGroup(page, group, post, imagePath) {
     if (!published) throw new Error('فشل العثور على زر النشر أو تعذر الضغط عليه');
     
     let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov'));
-    let finalWait = isUploadedVideo ? 75000 : 40000;
+    let finalWait = isUploadedVideo ? randomDelay(70, 90) : randomDelay(40, 50);
 
-    await logToDashboard(`⏳ انتظار استقرار النشر نهائياً لمدة ${finalWait/1000} ثانية لضمان إرسال المنشور...`, 'info');
+    await logToDashboard(`⏳ انتظار استقرار النشر نهائياً لمدة ${Math.round(finalWait/1000)} ثانية لضمان إرسال المنشور...`, 'info');
     await sleep(finalWait); 
     
     await logToDashboard(`✅ تم النشر في مجموعة البوت بنجاح تام: ${group.name}`, 'success');
@@ -608,6 +632,7 @@ async function processOnePostBot3(initialPostData) {
         }
     }
 
+    // 🛠️ خيارات تشغيل متصفح آمنة خالية من أَعلام البوتات للحساب الجديد
     const launchOptions = {
         headless: true,
         args: [
@@ -615,25 +640,17 @@ async function processOnePostBot3(initialPostData) {
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-blink-features=AutomationControlled',
-            '--disable-gpu',
-            '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-service-autorun',
             '--password-store=basic',
-            '--single-process',
-            '--js-flags="--max-old-space-size=128"',
             '--disable-extensions',
-            '--disable-component-extensions-with-background-pages',
             '--disable-default-apps',
             '--mute-audio',
-            '--no-zygote',
-            '--disable-accelerated-video-decode',
-            '--disable-infobars',
-            '--hide-scrollbars'
+            '--disable-infobars'
         ]
     };
 
-    await logToDashboard(`⚡ تم تشغيل المتصفح بالسرعة المباشرة وبدون بروكسي بطيء`, 'info');
+    await logToDashboard(`⚡ تم تشغيل المتصفح بضبط أمان خاص بالحساب الجديد لمنع Checkpoint`, 'info');
 
     const browser = await chromium.launch(launchOptions);
 
@@ -841,8 +858,9 @@ async function processOnePostBot3(initialPostData) {
                 }
 
                 if (currentRemaining.length > 0) {
-                    const longBreak = randomDelay(180, 300);
-                    await logToDashboard(`⏳ استراحة أمان لحماية الحساب لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
+                    // استراحة أمان أطول للحساب الجديد (من 4 إلى 7 دقائق)
+                    const longBreak = randomDelay(240, 420);
+                    await logToDashboard(`⏳ استراحة أمان مخصصة للحساب الجديد لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
                     await sleep(longBreak);
                 }
 
@@ -877,7 +895,7 @@ async function processOnePostBot3(initialPostData) {
                     error_message: JSON.stringify(failedGroups)
                 }).eq('id', initialPostData.id);
 
-                await sleep(15000);
+                await sleep(18000);
                 continue; 
             } finally {
                 await page.close();
@@ -926,9 +944,8 @@ async function startBot3Engine() {
                 .eq('bot_name', BOT_ID)
                 .single();
 
-            if (counterStatus && counterStatus.status === 'IDLE') {
-                await logToDashboard(`🛑 تم رصد حالة الإيقاف (IDLE) للبوت الثالث في المحرك الرئيسي، جاري الخروج فوراً...`, 'warn');
-                process.exit(0);
+            if (counterStatus && ['IDLE', 'STOPPED', 'PAUSED'].includes(counterStatus.status)) {
+                await forceKillProcess('تم رصد حالة الإيقاف في المحرك الرئيسي للبوت الثالث');
             }
 
             const { data, error } = await supabase
@@ -969,8 +986,7 @@ async function startBot3Engine() {
             if (!postToRun) {
                 await logToDashboard(`🎉 اكتملت جميع المهام في الطابور، تم إنهاء الجلسة السحابية بنجاح!`, 'success');
                 await supabase.from('bot_counters').update({ status: 'IDLE' }).eq('bot_name', BOT_ID);
-                console.log("✅ لا توجد إعلانات تحتوي على مجموعات قيد الانتظار، جاري إغلاق السكربت...");
-                process.exit(0);
+                await forceKillProcess('لا توجد إعلانات قيد الانتظار');
             }
 
             await supabase.from('publish_queue').update({ status: 'processing' }).eq('id', postToRun.id);
@@ -979,7 +995,7 @@ async function startBot3Engine() {
 
             await supabase.from('publish_queue').update({ status: 'stopped' }).eq('id', postToRun.id);
 
-            const macroDelay = randomDelay(900, 1800);
+            const macroDelay = randomDelay(1200, 2100);
             await logToDashboard(`⏳ استراحة الإعلانات الكبرى للبوت 3: انتظار ${Math.round(macroDelay / 1000 / 60)} دقيقة...`, 'info');
             await sleep(macroDelay);
 

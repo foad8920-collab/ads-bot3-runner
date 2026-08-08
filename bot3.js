@@ -89,7 +89,7 @@ async function checkAndResetCounter(botName) {
 // 🛠️ 2. دالة تسجيل النشر الناجح وتحديث المجموعات والعدادات للبوت الثالث
 async function logPublishSuccess(botName, adId, actualPostText, groupName) {
     try {
-        const exactPublishTime = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Riyadh' }).replace(' ', 'T');
+        const exactPublishTime = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Aden' }).replace(' ', 'T') + '+03:00';
         const displayTitle = actualPostText ? (actualPostText.substring(0, 120) + '...') : 'إعلان بدون عنوان';
 
         const { error: insertError } = await supabase

@@ -10,11 +10,16 @@ const { createClient } = require('@supabase/supabase-js');
 // 🔌 Supabase
 // ============================================================
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const SUPABASE_URL =
+    process.env.SUPABASE_URL ||
+    'https://bmsfhqmsovicpgxxwsgi.supabase.co';
+
+const SUPABASE_KEY =
+    process.env.SUPABASE_KEY ||
+    'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.error('❌ SUPABASE_URL أو SUPABASE_KEY غير موجود في Environment Variables');
+    console.error('❌ SUPABASE_URL أو SUPABASE_KEY غير موجود');
     process.exit(1);
 }
 

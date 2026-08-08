@@ -18,7 +18,7 @@ jobs:
 
       - name: ⏱️ ضبط توقيت السيرفر الزمني
         run: |
-          sudo timedatectl set-timezone Asia/Riyadh
+          sudo timedatectl set-timezone Asia/Aden
           date
 
       - name: 🟢 إعداد بيئة Node.js

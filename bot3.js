@@ -673,8 +673,6 @@ async function processOnePostBot3(initialPostData) {
 
     const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
-        timezoneId: 'Asia/Riyadh',
-        locale: 'ar-SA',
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         permissions: ['clipboard-read', 'clipboard-write'],
         colorScheme: 'dark',

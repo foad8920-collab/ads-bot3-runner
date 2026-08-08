@@ -3,7 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const axios = require('axios');
-const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
 // ============================================================
@@ -12,25 +11,43 @@ const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL =
     process.env.SUPABASE_URL ||
-    'https://bmsfhqmsovicpgxxwsgi.supabase.co';
+    'https://YOUR_PROJECT.supabase.co';
 
 const SUPABASE_KEY =
-    process.env.SUPABASE_KEY ||
-    'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef';
+    process.env.SUPABASE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.error('❌ SUPABASE_URL أو SUPABASE_KEY غير موجود');
+    console.error(
+        '❌ SUPABASE_URL أو SUPABASE_KEY غير موجود في Environment Variables'
+    );
+
     process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase =
+    createClient(
+        SUPABASE_URL,
+        SUPABASE_KEY
+    );
 
-const TEMP_DIR = path.join(os.tmpdir(), 'bot3-temp-files');
+// ============================================================
+// ⚙️ إعدادات Bot3
+// ============================================================
 
-const ACCOUNT_NAME = 'الحساب (3)';
-const BOT_ID = 'bot3';
+const TEMP_DIR =
+    path.join(
+        os.tmpdir(),
+        'bot3-temp-files'
+    );
 
-const MAX_DAILY_POSTS = 15;
+const ACCOUNT_NAME =
+    'الحساب (3)';
+
+const BOT_ID =
+    'bot3';
+
+const MAX_DAILY_POSTS =
+    15;
 
 // ============================================================
 // 🧠 أدوات عامة
@@ -41,8 +58,12 @@ function sleep(ms) {
 }
 
 function randomDelay(minSeconds, maxSeconds) {
-    const min = minSeconds * 1000;
-    const max = maxSeconds * 1000;
+
+    const min =
+        minSeconds * 1000;
+
+    const max =
+        maxSeconds * 1000;
 
     return Math.floor(
         Math.random() * (max - min + 1)
@@ -50,10 +71,17 @@ function randomDelay(minSeconds, maxSeconds) {
 }
 
 function getMemoryLog() {
-    const memory = process.memoryUsage();
 
-    const rssMB = (memory.rss / 1024 / 1024).toFixed(1);
-    const heapMB = (memory.heapUsed / 1024 / 1024).toFixed(1);
+    const memory =
+        process.memoryUsage();
+
+    const rssMB =
+        (memory.rss / 1024 / 1024)
+            .toFixed(1);
+
+    const heapMB =
+        (memory.heapUsed / 1024 / 1024)
+            .toFixed(1);
 
     return `📊 [RAM: ${rssMB} MB | Heap: ${heapMB} MB]`;
 }
@@ -62,41 +90,66 @@ function getMemoryLog() {
 // 📝 Dashboard Logging
 // ============================================================
 
-async function logToDashboard(message, type = 'info') {
+async function logToDashboard(
+    message,
+    type = 'info'
+) {
 
-    const ramInfo = getMemoryLog();
+    const ramInfo =
+        getMemoryLog();
 
-    const fullMsg = `${message} | ${ramInfo}`;
-    const consoleMsg = `[${ACCOUNT_NAME}] ${fullMsg}`;
+    const fullMsg =
+        `${message} | ${ramInfo}`;
+
+    const consoleMsg =
+        `[${ACCOUNT_NAME}] ${fullMsg}`;
 
     if (type === 'error') {
-        console.error(`❌ ${consoleMsg}`);
+
+        console.error(
+            `❌ ${consoleMsg}`
+        );
+
     }
     else if (type === 'success') {
-        console.log(`✅ ${consoleMsg}`);
+
+        console.log(
+            `✅ ${consoleMsg}`
+        );
+
     }
     else if (type === 'warn') {
-        console.warn(`⚠️ ${consoleMsg}`);
+
+        console.warn(
+            `⚠️ ${consoleMsg}`
+        );
+
     }
     else {
-        console.log(`📢 ${consoleMsg}`);
+
+        console.log(
+            `📢 ${consoleMsg}`
+        );
     }
 
     try {
 
-        const { error } = await supabase
-            .from('bot_logs')
-            .insert([
-                {
-                    message: consoleMsg,
-                    log_type: type
-                }
-            ]);
+        const { error } =
+            await supabase
+                .from('bot_logs')
+                .insert([
+                    {
+                        message: consoleMsg,
+                        log_type: type
+                    }
+                ]);
 
         if (error) {
+
             console.error(
                 `⚠️ [Log Error]: ${error.message}`
             );
+
         }
 
     }
@@ -110,21 +163,24 @@ async function logToDashboard(message, type = 'info') {
 }
 
 // ============================================================
-// ⚙️ System Settings
+// ⚙️ قراءة System Setting
 // ============================================================
 
 async function getSetting(keyName) {
 
     try {
 
-        const { data, error } = await supabase
-            .from('system_settings')
-            .select('value')
-            .eq('key', keyName)
-            .single();
+        const { data, error } =
+            await supabase
+                .from('system_settings')
+                .select('value')
+                .eq('key', keyName)
+                .single();
 
         if (error || !data) {
+
             return null;
+
         }
 
         return data.value;
@@ -157,7 +213,10 @@ async function forceKillProcess(
             .update({
                 status: 'IDLE'
             })
-            .eq('bot_name', BOT_ID);
+            .eq(
+                'bot_name',
+                BOT_ID
+            );
 
     }
     catch (e) {
@@ -169,7 +228,7 @@ async function forceKillProcess(
 
     }
 
-    // إلغاء GitHub Action إذا كان البوت يعمل داخل GitHub Actions
+    // إلغاء GitHub Action إذا كان التشغيل من GitHub Actions
     if (
         process.env.GITHUB_ACTIONS &&
         process.env.GITHUB_TOKEN &&
@@ -210,7 +269,7 @@ async function forceKillProcess(
 }
 
 // ============================================================
-// 🧹 تنظيف السجلات القديمة
+// 🧹 تنظيف سجلات Dashboard القديمة
 // ============================================================
 
 async function cleanOldLogs() {
@@ -219,13 +278,18 @@ async function cleanOldLogs() {
 
         const threeDaysAgo =
             new Date(
-                Date.now() - 3 * 24 * 60 * 60 * 1000
+                Date.now() -
+                3 * 24 * 60 * 60 * 1000
             ).toISOString();
 
-        const { error } = await supabase
-            .from('bot_logs')
-            .delete()
-            .lt('created_at', threeDaysAgo);
+        const { error } =
+            await supabase
+                .from('bot_logs')
+                .delete()
+                .lt(
+                    'created_at',
+                    threeDaysAgo
+                );
 
         if (!error) {
 
@@ -251,50 +315,65 @@ async function cleanOldLogs() {
 // 📅 عداد اليوم
 // ============================================================
 
-async function checkAndResetCounter(botName) {
+async function checkAndResetCounter(
+    botName
+) {
 
     try {
 
         const todayStr =
-            new Date().toLocaleDateString(
-                'en-CA',
-                {
-                    timeZone: 'Asia/Riyadh'
-                }
-            );
+            new Date()
+                .toLocaleDateString(
+                    'en-CA',
+                    {
+                        timeZone:
+                            'Asia/Riyadh'
+                    }
+                );
 
-        const { data, error } =
+        const {
+            data,
+            error
+        } =
             await supabase
                 .from('bot_counters')
                 .select(
                     'daily_count,last_reset_date'
                 )
-                .eq('bot_name', botName)
+                .eq(
+                    'bot_name',
+                    botName
+                )
                 .single();
 
         if (error || !data) {
+
             return 0;
+
         }
 
-        if (data.last_reset_date !== todayStr) {
+        if (
+            data.last_reset_date !==
+            todayStr
+        ) {
 
             await logToDashboard(
                 `🔄 يوم جديد (${todayStr}) للبوت ${botName}. تصفير العداد اليومي فقط.`,
                 'info'
             );
 
-            // ⚠️ مهم:
-            // لا نمسح bot_publish_logs هنا.
-            // لأنه يستخدم أيضًا لمنع التكرار.
-
             await supabase
                 .from('bot_counters')
                 .update({
                     daily_count: 0,
-                    last_reset_date: todayStr,
+                    last_reset_date:
+                        todayStr,
                     status: 'RUNNING'
                 })
-                .eq('bot_name', botName);
+                .eq(
+                    'bot_name',
+                    botName
+                );
 
             return 0;
         }
@@ -331,27 +410,47 @@ async function logPublishSuccess(
                 .toLocaleString(
                     'sv-SE',
                     {
-                        timeZone: 'Asia/Riyadh'
+                        timeZone:
+                            'Asia/Riyadh'
                     }
                 )
-                .replace(' ', 'T');
+                .replace(
+                    ' ',
+                    'T'
+                );
 
         const displayTitle =
             actualPostText
-                ? actualPostText.substring(0, 120) + '...'
+                ? actualPostText.substring(
+                    0,
+                    120
+                ) + '...'
                 : 'إعلان بدون عنوان';
 
-        const { error: insertError } =
+        const {
+            error: insertError
+        } =
             await supabase
                 .from('bot_publish_logs')
                 .insert([
                     {
-                        bot_name: botName,
-                        ad_id: adId,
-                        ad_title: displayTitle,
-                        group_name: groupName,
-                        status: 'SUCCESS',
-                        published_at: exactPublishTime
+                        bot_name:
+                            botName,
+
+                        ad_id:
+                            adId,
+
+                        ad_title:
+                            displayTitle,
+
+                        group_name:
+                            groupName,
+
+                        status:
+                            'SUCCESS',
+
+                        published_at:
+                            exactPublishTime
                     }
                 ]);
 
@@ -362,16 +461,32 @@ async function logPublishSuccess(
                 insertError.message
             );
 
+            throw new Error(
+                `فشل تسجيل النشر في bot_publish_logs: ${insertError.message}`
+            );
         }
 
-        const { data } =
+        const {
+            data,
+            error
+        } =
             await supabase
                 .from('bot_counters')
                 .select(
                     'daily_count,total_count'
                 )
-                .eq('bot_name', botName)
+                .eq(
+                    'bot_name',
+                    botName
+                )
                 .single();
+
+        if (error) {
+
+            throw new Error(
+                `فشل قراءة عداد البوت: ${error.message}`
+            );
+        }
 
         const currentDaily =
             (data?.daily_count || 0) + 1;
@@ -379,15 +494,35 @@ async function logPublishSuccess(
         const currentTotal =
             (data?.total_count || 0) + 1;
 
-        await supabase
-            .from('bot_counters')
-            .update({
-                daily_count: currentDaily,
-                total_count: currentTotal,
-                last_active: exactPublishTime,
-                status: 'RUNNING'
-            })
-            .eq('bot_name', botName);
+        const {
+            error: counterError
+        } =
+            await supabase
+                .from('bot_counters')
+                .update({
+                    daily_count:
+                        currentDaily,
+
+                    total_count:
+                        currentTotal,
+
+                    last_active:
+                        exactPublishTime,
+
+                    status:
+                        'RUNNING'
+                })
+                .eq(
+                    'bot_name',
+                    botName
+                );
+
+        if (counterError) {
+
+            throw new Error(
+                `فشل تحديث عداد البوت: ${counterError.message}`
+            );
+        }
 
         await logToDashboard(
             `📊 [العداد] تم تسجيل نشر المجموعة (${groupName}) | اليوم: ${currentDaily}`,
@@ -402,11 +537,12 @@ async function logPublishSuccess(
             e.message
         );
 
+        throw e;
     }
 }
 
 // ============================================================
-// 🤖 إعادة صياغة الإعلان
+// 🤖 إعادة صياغة الإعلان بواسطة Gemini
 // ============================================================
 
 async function rewriteAdWithAI(
@@ -415,7 +551,9 @@ async function rewriteAdWithAI(
 ) {
 
     const geminiKey =
-        await getSetting('GEMINI_KEY');
+        await getSetting(
+            'GEMINI_KEY'
+        );
 
     if (!geminiKey) {
 
@@ -427,6 +565,7 @@ async function rewriteAdWithAI(
 أنت خبير تسويق إلكتروني.
 
 قم بإعادة صياغة الإعلان بأسلوب جذاب وطبيعي مع الحفاظ على:
+
 - نفس الفكرة.
 - نفس المعلومات الأساسية.
 - الروابط إن وجدت.
@@ -445,24 +584,37 @@ ${description}
 
         const modelsResponse =
             await axios.get(
-                `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`
+                `https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`,
+                {
+                    timeout: 30000
+                }
             );
 
         const validModels =
             (modelsResponse.data.models || [])
-                .filter(model =>
-                    model.supportedGenerationMethods &&
-                    model.supportedGenerationMethods.includes(
-                        'generateContent'
-                    ) &&
-                    model.name.includes('gemini')
+                .filter(
+                    model =>
+                        model.supportedGenerationMethods &&
+                        model.supportedGenerationMethods.includes(
+                            'generateContent'
+                        ) &&
+                        model.name.includes(
+                            'gemini'
+                        )
                 );
 
-        if (validModels.length === 0) {
+        if (
+            validModels.length === 0
+        ) {
+
             return `${title}\n\n${description}`;
+
         }
 
-        for (const modelObj of validModels) {
+        for (
+            const modelObj
+            of validModels
+        ) {
 
             try {
 
@@ -474,11 +626,15 @@ ${description}
                                 {
                                     parts: [
                                         {
-                                            text: promptText
+                                            text:
+                                                promptText
                                         }
                                     ]
                                 }
                             ]
+                        },
+                        {
+                            timeout: 60000
                         }
                     );
 
@@ -523,13 +679,21 @@ ${description}
 // 🖼️ تحميل الصورة / الفيديو
 // ============================================================
 
-async function downloadImage(imageUrl) {
+async function downloadImage(
+    imageUrl
+) {
 
     if (!imageUrl) {
+
         return null;
+
     }
 
-    if (!fs.existsSync(TEMP_DIR)) {
+    if (
+        !fs.existsSync(
+            TEMP_DIR
+        )
+    ) {
 
         fs.mkdirSync(
             TEMP_DIR,
@@ -553,7 +717,9 @@ async function downloadImage(imageUrl) {
         ext = '.mp4';
 
     }
-    else if (lowerUrl.includes('.mov')) {
+    else if (
+        lowerUrl.includes('.mov')
+    ) {
 
         ext = '.mov';
 
@@ -566,7 +732,9 @@ async function downloadImage(imageUrl) {
         ext = '.webp';
 
     }
-    else if (lowerUrl.includes('.png')) {
+    else if (
+        lowerUrl.includes('.png')
+    ) {
 
         ext = '.png';
 
@@ -580,10 +748,17 @@ async function downloadImage(imageUrl) {
 
     const response =
         await axios({
-            url: imageUrl,
-            method: 'GET',
-            responseType: 'stream',
-            timeout: 120000
+            url:
+                imageUrl,
+
+            method:
+                'GET',
+
+            responseType:
+                'stream',
+
+            timeout:
+                120000
         });
 
     await new Promise(
@@ -594,7 +769,9 @@ async function downloadImage(imageUrl) {
                     imagePath
                 );
 
-            response.data.pipe(writer);
+            response.data.pipe(
+                writer
+            );
 
             writer.on(
                 'finish',
@@ -613,17 +790,26 @@ async function downloadImage(imageUrl) {
 }
 
 // ============================================================
-// 🔐 فحص حالة Facebook
+// 🔐 فحص جلسة Facebook
 // ============================================================
 
-async function checkFacebookSession(page) {
+async function checkFacebookSession(
+    page
+) {
 
     const currentUrl =
         page.url();
 
     if (
-        currentUrl.includes('/login') ||
-        currentUrl.includes('checkpoint')
+        currentUrl.includes(
+            '/login'
+        ) ||
+        currentUrl.includes(
+            'checkpoint'
+        ) ||
+        currentUrl.includes(
+            'login.php'
+        )
     ) {
 
         return {
@@ -641,10 +827,12 @@ async function checkFacebookSession(page) {
 }
 
 // ============================================================
-// 🌐 فتح الصفحة الرئيسية مرة واحدة عند بداية الجلسة
+// 🌐 تهيئة جلسة Facebook
 // ============================================================
 
-async function initializeFacebookSession(page) {
+async function initializeFacebookSession(
+    page
+) {
 
     await logToDashboard(
         '🌐 جاري تهيئة جلسة Facebook مرة واحدة قبل بدء النشر...',
@@ -654,17 +842,25 @@ async function initializeFacebookSession(page) {
     await page.goto(
         'https://www.facebook.com/',
         {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
+            waitUntil:
+                'domcontentloaded',
+
+            timeout:
+                60000
         }
     );
 
     await sleep(
-        randomDelay(10, 15)
+        randomDelay(
+            10,
+            15
+        )
     );
 
     const session =
-        await checkFacebookSession(page);
+        await checkFacebookSession(
+            page
+        );
 
     if (!session.valid) {
 
@@ -684,17 +880,24 @@ async function initializeFacebookSession(page) {
 // 📝 فتح مربع النشر
 // ============================================================
 
-async function openPostBox(page) {
+async function openPostBox(
+    page
+) {
 
     const initialWait =
-        randomDelay(10, 16);
+        randomDelay(
+            10,
+            16
+        );
 
     await logToDashboard(
         `⏳ انتظار ${Math.round(initialWait / 1000)} ثانية لتحميل صفحة المجموعة...`,
         'info'
     );
 
-    await sleep(initialWait);
+    await sleep(
+        initialWait
+    );
 
     const discussionTabs = [
 
@@ -706,12 +909,19 @@ async function openPostBox(page) {
 
     ];
 
-    for (const tabSel of discussionTabs) {
+    for (
+        const tabSel
+        of discussionTabs
+    ) {
 
         try {
 
             const tabBtn =
-                page.locator(tabSel).first();
+                page
+                    .locator(
+                        tabSel
+                    )
+                    .first();
 
             if (
                 await tabBtn.count() > 0 &&
@@ -719,12 +929,18 @@ async function openPostBox(page) {
             ) {
 
                 await tabBtn.click({
-                    timeout: 5000,
-                    force: true
+                    timeout:
+                        5000,
+
+                    force:
+                        true
                 });
 
                 await sleep(
-                    randomDelay(8, 14)
+                    randomDelay(
+                        8,
+                        14
+                    )
                 );
 
                 break;
@@ -767,12 +983,19 @@ async function openPostBox(page) {
 
     ];
 
-    for (const selector of selectors) {
+    for (
+        const selector
+        of selectors
+    ) {
 
         try {
 
             const element =
-                page.locator(selector).first();
+                page
+                    .locator(
+                        selector
+                    )
+                    .first();
 
             if (
                 await element.count() > 0 &&
@@ -785,23 +1008,34 @@ async function openPostBox(page) {
                 if (box) {
 
                     await page.mouse.move(
-                        box.x + box.width / 2,
-                        box.y + box.height / 2
+                        box.x +
+                            box.width / 2,
+
+                        box.y +
+                            box.height / 2
                     );
 
                     await sleep(
-                        randomDelay(1, 2)
+                        randomDelay(
+                            1,
+                            2
+                        )
                     );
-
                 }
 
                 await element.click({
-                    timeout: 8000,
-                    force: true
+                    timeout:
+                        8000,
+
+                    force:
+                        true
                 });
 
                 await sleep(
-                    randomDelay(8, 14)
+                    randomDelay(
+                        8,
+                        14
+                    )
                 );
 
                 const confirmBtns = [
@@ -815,12 +1049,19 @@ async function openPostBox(page) {
 
                 ];
 
-                for (const cBtn of confirmBtns) {
+                for (
+                    const cBtn
+                    of confirmBtns
+                ) {
 
                     try {
 
                         const btn =
-                            page.locator(cBtn).first();
+                            page
+                                .locator(
+                                    cBtn
+                                )
+                                .first();
 
                         if (
                             await btn.count() > 0 &&
@@ -828,12 +1069,18 @@ async function openPostBox(page) {
                         ) {
 
                             await btn.click({
-                                timeout: 3000,
-                                force: true
+                                timeout:
+                                    3000,
+
+                                force:
+                                    true
                             });
 
                             await sleep(
-                                randomDelay(1, 3)
+                                randomDelay(
+                                    1,
+                                    3
+                                )
                             );
 
                         }
@@ -869,7 +1116,10 @@ async function pasteTextWithLines(
 ) {
 
     await sleep(
-        randomDelay(3, 5)
+        randomDelay(
+            3,
+            5
+        )
     );
 
     const targetSelectors = [
@@ -891,19 +1141,28 @@ async function pasteTextWithLines(
 
     let textbox = null;
 
-    for (const sel of targetSelectors) {
+    for (
+        const sel
+        of targetSelectors
+    ) {
 
         try {
 
             const element =
-                page.locator(sel).first();
+                page
+                    .locator(
+                        sel
+                    )
+                    .first();
 
             if (
                 await element.count() > 0 &&
                 await element.isVisible()
             ) {
 
-                textbox = element;
+                textbox =
+                    element;
+
                 break;
             }
 
@@ -921,23 +1180,29 @@ async function pasteTextWithLines(
     }
 
     await textbox.click({
-        timeout: 8000,
-        force: true
+        timeout:
+            8000,
+
+        force:
+            true
     });
 
     await sleep(
-        randomDelay(2, 4)
+        randomDelay(
+            2,
+            4
+        )
     );
 
-    // محاولة Clipboard
     try {
 
         await page.evaluate(
-            async (text) => {
+            async text => {
 
-                await navigator.clipboard.writeText(
-                    text
-                );
+                await navigator.clipboard
+                    .writeText(
+                        text
+                    );
 
             },
             postText
@@ -982,8 +1247,7 @@ async function publishToGroup(
     page,
     group,
     post,
-    imagePath,
-    sessionInitialized
+    imagePath
 ) {
 
     await logToDashboard(
@@ -994,17 +1258,25 @@ async function publishToGroup(
     await page.goto(
         group.url,
         {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
+            waitUntil:
+                'domcontentloaded',
+
+            timeout:
+                60000
         }
     );
 
     await sleep(
-        randomDelay(12, 20)
+        randomDelay(
+            12,
+            20
+        )
     );
 
     const session =
-        await checkFacebookSession(page);
+        await checkFacebookSession(
+            page
+        );
 
     if (!session.valid) {
 
@@ -1015,7 +1287,9 @@ async function publishToGroup(
     }
 
     const opened =
-        await openPostBox(page);
+        await openPostBox(
+            page
+        );
 
     if (!opened) {
 
@@ -1026,7 +1300,10 @@ async function publishToGroup(
     }
 
     await sleep(
-        randomDelay(3, 6)
+        randomDelay(
+            3,
+            6
+        )
     );
 
     // ========================================================
@@ -1045,14 +1322,19 @@ async function publishToGroup(
 
         ];
 
-        let triggerClicked = false;
-
-        for (const trigSel of imageTriggerSelectors) {
+        for (
+            const trigSel
+            of imageTriggerSelectors
+        ) {
 
             try {
 
                 const trigElement =
-                    page.locator(trigSel).first();
+                    page
+                        .locator(
+                            trigSel
+                        )
+                        .first();
 
                 if (
                     await trigElement.count() > 0 &&
@@ -1060,14 +1342,18 @@ async function publishToGroup(
                 ) {
 
                     await trigElement.click({
-                        timeout: 6000,
-                        force: true
+                        timeout:
+                            6000,
+
+                        force:
+                            true
                     });
 
-                    triggerClicked = true;
-
                     await sleep(
-                        randomDelay(3, 5)
+                        randomDelay(
+                            3,
+                            5
+                        )
                     );
 
                     break;
@@ -1078,24 +1364,29 @@ async function publishToGroup(
 
         }
 
-        let isFileInjected = false;
+        let isFileInjected =
+            false;
 
         try {
 
             const dialogFileInput =
-                page.locator(
-                    'div[role="dialog"] input[type="file"]'
-                ).first();
+                page
+                    .locator(
+                        'div[role="dialog"] input[type="file"]'
+                    )
+                    .first();
 
             if (
                 await dialogFileInput.count() > 0
             ) {
 
-                await dialogFileInput.setInputFiles(
-                    imagePath
-                );
+                await dialogFileInput
+                    .setInputFiles(
+                        imagePath
+                    );
 
-                isFileInjected = true;
+                isFileInjected =
+                    true;
 
             }
             else {
@@ -1111,13 +1402,16 @@ async function publishToGroup(
                 if (count > 0) {
 
                     await allFileInputs
-                        .nth(count - 1)
-                        .setInputFiles(imagePath);
+                        .nth(
+                            count - 1
+                        )
+                        .setInputFiles(
+                            imagePath
+                        );
 
-                    isFileInjected = true;
-
+                    isFileInjected =
+                        true;
                 }
-
             }
 
         }
@@ -1133,27 +1427,40 @@ async function publishToGroup(
         if (isFileInjected) {
 
             const isVideoFile =
-                imagePath.endsWith('.mp4') ||
-                imagePath.endsWith('.mov');
+                imagePath.endsWith(
+                    '.mp4'
+                ) ||
+                imagePath.endsWith(
+                    '.mov'
+                );
 
             const waitTime =
                 isVideoFile
-                    ? randomDelay(50, 70)
-                    : randomDelay(20, 30);
+                    ? randomDelay(
+                        50,
+                        70
+                    )
+                    : randomDelay(
+                        20,
+                        30
+                    );
 
             await logToDashboard(
                 `🖼️ تم إرفاق الملف، انتظار ${Math.round(waitTime / 1000)} ثانية...`,
                 'info'
             );
 
-            await sleep(waitTime);
+            await sleep(
+                waitTime
+            );
 
             try {
 
                 await page.waitForSelector(
                     'img[src*="blob:"], video, [aria-label*="إزالة"], [aria-label*="Remove"]',
                     {
-                        timeout: 30000
+                        timeout:
+                            30000
                     }
                 );
 
@@ -1173,7 +1480,10 @@ async function publishToGroup(
             }
 
             await sleep(
-                randomDelay(8, 15)
+                randomDelay(
+                    8,
+                    15
+                )
             );
         }
     }
@@ -1183,7 +1493,8 @@ async function publishToGroup(
     // ========================================================
 
     let postText =
-        post.ai_final_text3 || '';
+        post.ai_final_text3 ||
+        '';
 
     if (
         !postText ||
@@ -1191,7 +1502,7 @@ async function publishToGroup(
     ) {
 
         await logToDashboard(
-            `🧠 ai_final_text3 فارغ، إنشاء نص جديد.`,
+            '🧠 ai_final_text3 فارغ، إنشاء نص جديد.',
             'info'
         );
 
@@ -1205,22 +1516,39 @@ async function publishToGroup(
             `${aiGeneratedContent}\n\n🔥 إعلان جديد على سوق الإعلانات الحديث`;
 
         const fbUrl =
-            post.facebook_url || '';
+            post.facebook_url ||
+            '';
 
-        if (fbUrl.trim() !== '') {
+        if (
+            fbUrl.trim() !== ''
+        ) {
 
             postText +=
                 `\n\n${fbUrl.trim()}`;
-
         }
 
-        await supabase
-            .from('publish_queue')
-            .update({
-                ai_final_text3: postText
-            })
-            .eq('id', post.id);
+        const {
+            error
+        } =
+            await supabase
+                .from('publish_queue')
+                .update({
+                    ai_final_text3:
+                        postText
+                })
+                .eq(
+                    'id',
+                    post.id
+                );
 
+        if (error) {
+
+            await logToDashboard(
+                `⚠️ تعذر حفظ ai_final_text3: ${error.message}`,
+                'warn'
+            );
+
+        }
     }
 
     await logToDashboard(
@@ -1234,22 +1562,31 @@ async function publishToGroup(
     );
 
     const fbUrlCheck =
-        post.facebook_url || '';
+        post.facebook_url ||
+        '';
 
     if (
         fbUrlCheck.trim() !== '' ||
-        postText.includes('facebook.com')
+        postText.includes(
+            'facebook.com'
+        )
     ) {
 
         await sleep(
-            randomDelay(20, 30)
+            randomDelay(
+                20,
+                30
+            )
         );
 
     }
     else {
 
         await sleep(
-            randomDelay(10, 18)
+            randomDelay(
+                10,
+                18
+            )
         );
 
     }
@@ -1273,14 +1610,22 @@ async function publishToGroup(
 
     ];
 
-    let published = false;
+    let published =
+        false;
 
-    for (const btn of publishButtons) {
+    for (
+        const btn
+        of publishButtons
+    ) {
 
         try {
 
             const button =
-                page.locator(btn).last();
+                page
+                    .locator(
+                        btn
+                    )
+                    .last();
 
             if (
                 await button.count() > 0 &&
@@ -1290,15 +1635,22 @@ async function publishToGroup(
                 await button.scrollIntoViewIfNeeded();
 
                 await sleep(
-                    randomDelay(1, 2)
+                    randomDelay(
+                        1,
+                        2
+                    )
                 );
 
                 await button.click({
-                    timeout: 8000,
-                    force: true
+                    timeout:
+                        8000,
+
+                    force:
+                        true
                 });
 
-                published = true;
+                published =
+                    true;
 
                 await logToDashboard(
                     '🚀 تم الضغط على زر النشر.',
@@ -1328,27 +1680,42 @@ async function publishToGroup(
     const isUploadedVideo =
         imagePath &&
         (
-            imagePath.endsWith('.mp4') ||
-            imagePath.endsWith('.mov')
+            imagePath.endsWith(
+                '.mp4'
+            ) ||
+            imagePath.endsWith(
+                '.mov'
+            )
         );
 
     const finalWait =
         isUploadedVideo
-            ? randomDelay(50, 70)
-            : randomDelay(25, 40);
+            ? randomDelay(
+                50,
+                70
+            )
+            : randomDelay(
+                25,
+                40
+            );
 
     await logToDashboard(
         `⏳ انتظار اكتمال عملية النشر ${Math.round(finalWait / 1000)} ثانية...`,
         'info'
     );
 
-    await sleep(finalWait);
+    await sleep(
+        finalWait
+    );
 
-    // فحص الجلسة مرة أخرى بعد النشر
     const afterPublishSession =
-        await checkFacebookSession(page);
+        await checkFacebookSession(
+            page
+        );
 
-    if (!afterPublishSession.valid) {
+    if (
+        !afterPublishSession.valid
+    ) {
 
         throw new Error(
             `FB_SESSION_INVALID_AFTER_POST: ${afterPublishSession.reason}`
@@ -1361,7 +1728,6 @@ async function publishToGroup(
         'success'
     );
 
-    // ⚠️ مهم جدًا: await
     await logPublishSuccess(
         BOT_ID,
         post.id,
@@ -1371,225 +1737,296 @@ async function publishToGroup(
 }
 
 // ============================================================
-// 🔄 معالجة إعلان واحد
+// 🔄 معالجة إعلان Bot3
 // ============================================================
 
 async function processOnePostBot3(
     initialPostData
 ) {
 
-    const currentDailyCount =
-        await checkAndResetCounter(BOT_ID);
+    let browser =
+        null;
 
-    if (
-        currentDailyCount >=
-        MAX_DAILY_POSTS
-    ) {
+    let page =
+        null;
 
-        await logToDashboard(
-            `⚠️ وصل ${BOT_ID} إلى الحد اليومي ${MAX_DAILY_POSTS}.`,
-            'warn'
-        );
+    let imagePath =
+        null;
 
-        await supabase
-            .from('bot_counters')
-            .update({
-                status: 'MAX_LIMIT_REACHED'
-            })
-            .eq('bot_name', BOT_ID);
+    let normalCompletion =
+        false;
 
-        return;
-    }
+    try {
 
-    const cookiesRaw =
-        await getSetting(
-            'FB_COOKIES_BOT3'
-        );
+        const currentDailyCount =
+            await checkAndResetCounter(
+                BOT_ID
+            );
 
-    if (!cookiesRaw) {
-
-        await logToDashboard(
-            '❌ FB_COOKIES_BOT3 غير موجود.',
-            'error'
-        );
-
-        return;
-    }
-
-    // ========================================================
-    // ⏳ تأخير بداية البوت 3
-    // ========================================================
-
-    const initialOffsetDelay =
-        randomDelay(480, 720);
-
-    await logToDashboard(
-        `⏳ تأخير بداية البوت 3: ${Math.round(initialOffsetDelay / 60000)} دقائق.`,
-        'info'
-    );
-
-    await sleep(
-        initialOffsetDelay
-    );
-
-    await logToDashboard(
-        `🚀 بدأ الإعلان #${initialPostData.id}: ${initialPostData.ad_title}`,
-        'info'
-    );
-
-    // ========================================================
-    // 🖼️ تحميل الوسائط
-    // ========================================================
-
-    let mediaUrl = '';
-
-    if (
-        initialPostData.ad_video &&
-        initialPostData.ad_video.trim() !== ''
-    ) {
-
-        mediaUrl =
-            initialPostData.ad_video.trim();
-
-    }
-    else if (
-        initialPostData.ad_image &&
-        initialPostData.ad_image.trim() !== ''
-    ) {
-
-        mediaUrl =
-            initialPostData.ad_image.trim();
-
-    }
-
-    let imagePath = null;
-
-    if (mediaUrl !== '') {
-
-        try {
-
-            imagePath =
-                await downloadImage(
-                    mediaUrl
-                );
-
-            if (imagePath) {
-
-                await logToDashboard(
-                    `🖼️ تم تحميل الملف: ${imagePath}`,
-                    'success'
-                );
-
-            }
-
-        }
-        catch (e) {
+        if (
+            currentDailyCount >=
+            MAX_DAILY_POSTS
+        ) {
 
             await logToDashboard(
-                `⚠️ فشل تحميل الملف: ${e.message}`,
+                `⚠️ وصل ${BOT_ID} إلى الحد اليومي ${MAX_DAILY_POSTS}.`,
                 'warn'
             );
 
+            await supabase
+                .from('bot_counters')
+                .update({
+                    status:
+                        'MAX_LIMIT_REACHED'
+                })
+                .eq(
+                    'bot_name',
+                    BOT_ID
+                );
+
+            return {
+                completed:
+                    false,
+
+                reason:
+                    'MAX_LIMIT_REACHED'
+            };
         }
-    }
 
-    // ========================================================
-    // 🌐 تشغيل المتصفح
-    // ========================================================
-    //
-    // مهم:
-    // لا يوجد هنا أي تزوير لـ webdriver/plugins/languages.
-    // لا يوجد User-Agent ثابت.
-    // لا يوجد AutomationControlled.
-    //
-    // الهدف: جلسة متسقة بدل محاولة إخفاء الأتمتة.
-    // ========================================================
+        // ====================================================
+        // 🍪 Cookies Bot3 من system_settings
+        // ====================================================
 
-    const launchOptions = {
+        const cookiesRaw =
+            await getSetting(
+                'FB_COOKIES_BOT3'
+            );
 
-        headless: true,
+        if (!cookiesRaw) {
 
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--no-first-run',
-            '--no-service-autorun',
-            '--password-store=basic',
-            '--disable-extensions',
-            '--disable-default-apps',
-            '--mute-audio'
-        ]
+            await logToDashboard(
+                '❌ FB_COOKIES_BOT3 غير موجود في system_settings.',
+                'error'
+            );
 
-    };
+            await supabase
+                .from('bot_counters')
+                .update({
+                    status:
+                        'ERROR'
+                })
+                .eq(
+                    'bot_name',
+                    BOT_ID
+                );
 
-    await logToDashboard(
-        '🌐 تشغيل Chromium بإعدادات قياسية ومستقرة.',
-        'info'
-    );
+            return {
+                completed:
+                    false,
 
-    const browser =
-        await chromium.launch(
-            launchOptions
+                reason:
+                    'COOKIES_MISSING'
+            };
+        }
+
+        // ====================================================
+        // ⏳ تأخير بداية Bot3
+        // ====================================================
+
+        const initialOffsetDelay =
+            randomDelay(
+                480,
+                720
+            );
+
+        await logToDashboard(
+            `⏳ تأخير بداية البوت 3: ${Math.round(initialOffsetDelay / 60000)} دقائق.`,
+            'info'
         );
 
-    const context =
-        await browser.newContext({
+        await sleep(
+            initialOffsetDelay
+        );
 
-            viewport: {
-                width: 1280,
-                height: 800
-            },
+        await logToDashboard(
+            `🚀 بدأ الإعلان #${initialPostData.id}: ${initialPostData.ad_title}`,
+            'info'
+        );
 
-            timezoneId:
-                'Asia/Riyadh',
+        // ====================================================
+        // 🖼️ تحميل الوسائط
+        // ====================================================
 
-            locale:
-                'ar-SA',
+        let mediaUrl =
+            '';
 
-            permissions: [
-                'clipboard-read',
-                'clipboard-write'
-            ],
+        if (
+            initialPostData.ad_video &&
+            initialPostData.ad_video.trim() !== ''
+        ) {
 
-            hasTouch: false
-
-        });
-
-    // ========================================================
-    // 🚫 لا يوجد initScript لتغيير بصمة المتصفح
-    // ========================================================
-
-    // لا نحظر الموارد المهمة.
-    // نحظر الخطوط فقط إذا أردت توفير الذاكرة.
-    await context.route(
-        '**/*',
-        async route => {
-
-            const resourceType =
-                route.request().resourceType();
-
-            if (
-                resourceType === 'font'
-            ) {
-
-                await route.abort();
-                return;
-            }
-
-            await route.continue();
+            mediaUrl =
+                initialPostData.ad_video.trim();
 
         }
-    );
+        else if (
+            initialPostData.ad_image &&
+            initialPostData.ad_image.trim() !== ''
+        ) {
 
-    try {
+            mediaUrl =
+                initialPostData.ad_image.trim();
+
+        }
+
+        if (
+            mediaUrl !== ''
+        ) {
+
+            try {
+
+                imagePath =
+                    await downloadImage(
+                        mediaUrl
+                    );
+
+                if (imagePath) {
+
+                    await logToDashboard(
+                        `🖼️ تم تحميل الملف: ${imagePath}`,
+                        'success'
+                    );
+
+                }
+
+            }
+            catch (e) {
+
+                await logToDashboard(
+                    `⚠️ فشل تحميل الملف: ${e.message}`,
+                    'warn'
+                );
+
+            }
+        }
+
+        // ====================================================
+        // 🌐 تشغيل Chromium
+        // ====================================================
+
+        const launchOptions = {
+
+            headless:
+                true,
+
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--no-first-run',
+                '--no-service-autorun',
+                '--password-store=basic',
+                '--disable-extensions',
+                '--disable-default-apps',
+                '--mute-audio'
+            ]
+        };
+
+        await logToDashboard(
+            '🌐 تشغيل Chromium بإعدادات قياسية ومستقرة.',
+            'info'
+        );
+
+        browser =
+            await chromium.launch(
+                launchOptions
+            );
+
+        const context =
+            await browser.newContext({
+
+                viewport: {
+                    width:
+                        1280,
+
+                    height:
+                        800
+                },
+
+                timezoneId:
+                    'Asia/Riyadh',
+
+                locale:
+                    'ar-SA',
+
+                permissions: [
+                    'clipboard-read',
+                    'clipboard-write'
+                ],
+
+                hasTouch:
+                    false
+            });
+
+        // ====================================================
+        // 🚫 لا يوجد تزوير لبصمة المتصفح
+        // ====================================================
+
+        await context.route(
+            '**/*',
+            async route => {
+
+                const resourceType =
+                    route.request()
+                        .resourceType();
+
+                if (
+                    resourceType ===
+                    'font'
+                ) {
+
+                    await route.abort();
+
+                    return;
+                }
+
+                await route.continue();
+            }
+        );
 
         // ====================================================
         // 🍪 تجهيز Cookies
         // ====================================================
 
-        let rawCookies =
-            JSON.parse(cookiesRaw);
+        let rawCookies;
+
+        try {
+
+            rawCookies =
+                JSON.parse(
+                    cookiesRaw
+                );
+
+        }
+        catch (e) {
+
+            throw new Error(
+                `FB_COOKIES_BOT3 ليست JSON صحيحة: ${e.message}`
+            );
+
+        }
+
+        if (
+            !Array.isArray(
+                rawCookies
+            )
+        ) {
+
+            throw new Error(
+                'FB_COOKIES_BOT3 يجب أن تكون Array من Cookies.'
+            );
+
+        }
 
         const formattedCookies =
             rawCookies
@@ -1605,10 +2042,12 @@ async function processOnePostBot3(
                     ) {
 
                         const lower =
-                            c.sameSite.toLowerCase();
+                            c.sameSite
+                                .toLowerCase();
 
                         if (
-                            lower === 'lax'
+                            lower ===
+                            'lax'
                         ) {
 
                             c.sameSite =
@@ -1616,7 +2055,8 @@ async function processOnePostBot3(
 
                         }
                         else if (
-                            lower === 'strict'
+                            lower ===
+                            'strict'
                         ) {
 
                             c.sameSite =
@@ -1624,8 +2064,10 @@ async function processOnePostBot3(
 
                         }
                         else if (
-                            lower === 'none' ||
-                            lower === 'no_restriction'
+                            lower ===
+                                'none' ||
+                            lower ===
+                                'no_restriction'
                         ) {
 
                             c.sameSite =
@@ -1652,7 +2094,6 @@ async function processOnePostBot3(
 
                         c.expires =
                             c.expirationDate;
-
                     }
 
                     delete c.id;
@@ -1668,19 +2109,19 @@ async function processOnePostBot3(
         );
 
         await logToDashboard(
-            '🍪 تم تحميل Cookies الخاصة بالبوت 3.',
+            `🍪 تم تحميل ${formattedCookies.length} Cookie الخاصة بالبوت 3.`,
             'success'
         );
 
         // ====================================================
-        // 📄 صفحة واحدة نستخدمها طوال الإعلان
+        // 📄 صفحة واحدة للإعلان
         // ====================================================
 
-        const page =
+        page =
             await context.newPage();
 
         // ====================================================
-        // 🌐 تهيئة الجلسة مرة واحدة فقط
+        // 🌐 تهيئة الجلسة
         // ====================================================
 
         await initializeFacebookSession(
@@ -1694,20 +2135,36 @@ async function processOnePostBot3(
         while (true) {
 
             // -----------------------------------------------
-            // 🛑 فحص حالة البوت
+            // 🛑 فحص حالة Bot3
             // -----------------------------------------------
 
             const {
-                data: counterStatus
+                data:
+                    counterStatus,
+                error:
+                    counterStatusError
             } =
                 await supabase
                     .from('bot_counters')
-                    .select('status')
+                    .select(
+                        'status'
+                    )
                     .eq(
                         'bot_name',
                         BOT_ID
                     )
                     .single();
+
+            if (
+                counterStatusError
+            ) {
+
+                await logToDashboard(
+                    `⚠️ تعذر قراءة حالة Bot3: ${counterStatusError.message}`,
+                    'warn'
+                );
+
+            }
 
             const isCounterStopped =
                 counterStatus &&
@@ -1719,8 +2176,30 @@ async function processOnePostBot3(
                     counterStatus.status
                 );
 
+            if (
+                isCounterStopped
+            ) {
+
+                await logToDashboard(
+                    `🛑 تم اكتشاف حالة ${counterStatus.status} للبوت 3.`,
+                    'warn'
+                );
+
+                normalCompletion =
+                    false;
+
+                break;
+            }
+
+            // -----------------------------------------------
+            // 📦 قراءة آخر نسخة من الإعلان
+            // -----------------------------------------------
+
             const {
-                data: freshData
+                data:
+                    freshData,
+                error:
+                    freshDataError
             } =
                 await supabase
                     .from('publish_queue')
@@ -1731,28 +2210,38 @@ async function processOnePostBot3(
                     )
                     .single();
 
+            if (
+                freshDataError ||
+                !freshData
+            ) {
+
+                await logToDashboard(
+                    '⚠️ لم يعد الإعلان موجودًا في publish_queue.',
+                    'warn'
+                );
+
+                break;
+            }
+
             const isQueueStopped =
-                !freshData ||
                 [
                     'stopped',
-                    'paused'
+                    'paused',
+                    'cancelled'
                 ].includes(
                     freshData.status
                 );
 
             if (
-                isCounterStopped ||
                 isQueueStopped
             ) {
 
-                await page.close();
-                await browser.close();
-
-                await forceKillProcess(
-                    'تم رصد حالة الإيقاف'
+                await logToDashboard(
+                    `🛑 حالة الإعلان أصبحت ${freshData.status}.`,
+                    'warn'
                 );
 
-                return;
+                break;
             }
 
             // -----------------------------------------------
@@ -1760,7 +2249,8 @@ async function processOnePostBot3(
             // -----------------------------------------------
 
             if (
-                freshData.skip_current_group === true
+                freshData.skip_current_group ===
+                true
             ) {
 
                 await logToDashboard(
@@ -1768,7 +2258,8 @@ async function processOnePostBot3(
                     'info'
                 );
 
-                let failedGroups = [];
+                let failedGroups =
+                    [];
 
                 try {
 
@@ -1781,10 +2272,23 @@ async function processOnePostBot3(
                                 freshData.error_message
                             );
 
+                        if (
+                            !Array.isArray(
+                                failedGroups
+                            )
+                        ) {
+
+                            failedGroups =
+                                [];
+                        }
                     }
 
                 }
-                catch (e) {}
+                catch (e) {
+
+                    failedGroups =
+                        [];
+                }
 
                 let currentBotGroup =
                     freshData.bot3_group;
@@ -1800,7 +2304,8 @@ async function processOnePostBot3(
 
                 failedGroups.push({
 
-                    name: groupName,
+                    name:
+                        groupName,
 
                     error:
                         'تم تخطي المجموعة يدوياً'
@@ -1838,7 +2343,8 @@ async function processOnePostBot3(
             // 📦 قراءة المجموعات
             // -----------------------------------------------
 
-            let groups = [];
+            let groups =
+                [];
 
             if (
                 Array.isArray(
@@ -1866,21 +2372,23 @@ async function processOnePostBot3(
                 }
                 catch (e) {
 
-                    groups = [];
-
+                    groups =
+                        [];
                 }
             }
 
             // -----------------------------------------------
-            // 🎯 مجموعة معلقة
+            // 🎯 المجموعة المعلقة
             // -----------------------------------------------
 
-            let botGroup = null;
+            let botGroup =
+                null;
 
             if (
                 typeof freshData.bot3_group ===
-                'object' &&
-                freshData.bot3_group !== null
+                    'object' &&
+                freshData.bot3_group !==
+                    null
             ) {
 
                 botGroup =
@@ -1904,8 +2412,8 @@ async function processOnePostBot3(
                 }
                 catch (e) {
 
-                    botGroup = null;
-
+                    botGroup =
+                        null;
                 }
             }
 
@@ -1919,7 +2427,8 @@ async function processOnePostBot3(
             ) {
 
                 const {
-                    data: checkAllBots
+                    data:
+                        checkAllBots
                 } =
                     await supabase
                         .from('publish_queue')
@@ -1939,7 +2448,9 @@ async function processOnePostBot3(
                         checkAllBots.bot2_group
                     );
 
-                if (!hasOtherBotGroups) {
+                if (
+                    !hasOtherBotGroups
+                ) {
 
                     const finalFailed =
                         checkAllBots?.failed_count ||
@@ -1979,12 +2490,16 @@ async function processOnePostBot3(
                 await supabase
                     .from('bot_counters')
                     .update({
-                        status: 'IDLE'
+                        status:
+                            'IDLE'
                     })
                     .eq(
                         'bot_name',
                         BOT_ID
                     );
+
+                normalCompletion =
+                    true;
 
                 break;
             }
@@ -1993,9 +2508,12 @@ async function processOnePostBot3(
             // 🎯 تحديد المجموعة
             // -----------------------------------------------
 
-            let targetGroup = null;
+            let targetGroup =
+                null;
 
-            if (botGroup) {
+            if (
+                botGroup
+            ) {
 
                 targetGroup =
                     botGroup;
@@ -2015,7 +2533,8 @@ async function processOnePostBot3(
                     groups.slice(1);
 
                 const {
-                    error: updateErr
+                    error:
+                        updateErr
                 } =
                     await supabase
                         .from('publish_queue')
@@ -2037,14 +2556,18 @@ async function processOnePostBot3(
                             initialPostData.id
                         );
 
-                if (updateErr) {
+                if (
+                    updateErr
+                ) {
 
                     await logToDashboard(
                         `⚠️ تعذر حجز المجموعة: ${updateErr.message}`,
                         'warn'
                     );
 
-                    await sleep(2000);
+                    await sleep(
+                        2000
+                    );
 
                     continue;
                 }
@@ -2060,7 +2583,10 @@ async function processOnePostBot3(
             // -----------------------------------------------
 
             const {
-                data: logData
+                data:
+                    logData,
+                error:
+                    logCheckError
             } =
                 await supabase
                     .from('bot_publish_logs')
@@ -2082,6 +2608,17 @@ async function processOnePostBot3(
                         'SUCCESS'
                     )
                     .limit(1);
+
+            if (
+                logCheckError
+            ) {
+
+                await logToDashboard(
+                    `⚠️ تعذر فحص تكرار المجموعة: ${logCheckError.message}`,
+                    'warn'
+                );
+
+            }
 
             if (
                 logData &&
@@ -2109,8 +2646,6 @@ async function processOnePostBot3(
                         initialPostData.id
                     );
 
-                botGroup = null;
-
                 continue;
             }
 
@@ -2124,16 +2659,16 @@ async function processOnePostBot3(
                     page,
                     targetGroup,
                     freshData,
-                    imagePath,
-                    true
+                    imagePath
                 );
 
                 // -------------------------------------------
-                // 📊 تحديث النجاح
+                // 📊 تحديث success_count
                 // -------------------------------------------
 
                 const {
-                    data: latestSuccessPost
+                    data:
+                        latestSuccessPost
                 } =
                     await supabase
                         .from('publish_queue')
@@ -2151,9 +2686,8 @@ async function processOnePostBot3(
                     0;
 
                 const newSuccessCount =
-                    currentSuccessCount + 1;
-
-                botGroup = null;
+                    currentSuccessCount +
+                    1;
 
                 await supabase
                     .from('publish_queue')
@@ -2184,7 +2718,8 @@ async function processOnePostBot3(
                 // -------------------------------------------
 
                 const {
-                    data: checkData
+                    data:
+                        checkData
                 } =
                     await supabase
                         .from('publish_queue')
@@ -2197,7 +2732,8 @@ async function processOnePostBot3(
                         )
                         .single();
 
-                let currentRemaining = [];
+                let currentRemaining =
+                    [];
 
                 if (
                     Array.isArray(
@@ -2223,12 +2759,16 @@ async function processOnePostBot3(
                             );
 
                     }
-                    catch (e) {}
+                    catch (e) {
 
+                        currentRemaining =
+                            [];
+                    }
                 }
 
                 if (
-                    currentRemaining.length > 0
+                    currentRemaining.length >
+                    0
                 ) {
 
                     const longBreak =
@@ -2245,14 +2785,13 @@ async function processOnePostBot3(
                     await sleep(
                         longBreak
                     );
-
                 }
 
             }
             catch (err) {
 
                 // -------------------------------------------
-                // 🚨 Checkpoint / Login
+                // 🚨 Facebook Security
                 // -------------------------------------------
 
                 const isFacebookSecurity =
@@ -2286,7 +2825,9 @@ async function processOnePostBot3(
                             BOT_ID
                         );
 
-                    // لا نعيد المحاولة آلياً
+                    normalCompletion =
+                        false;
+
                     break;
                 }
 
@@ -2295,7 +2836,8 @@ async function processOnePostBot3(
                 // -------------------------------------------
 
                 const {
-                    data: latestFailedPost
+                    data:
+                        latestFailedPost
                 } =
                     await supabase
                         .from('publish_queue')
@@ -2313,9 +2855,11 @@ async function processOnePostBot3(
                     0;
 
                 const newFailedCount =
-                    currentFailedCount + 1;
+                    currentFailedCount +
+                    1;
 
-                let failedGroups = [];
+                let failedGroups =
+                    [];
 
                 try {
 
@@ -2325,18 +2869,19 @@ async function processOnePostBot3(
 
                         const parsed =
                             JSON.parse(
-                                latestFailedPost.error_message
+                                latestFailedPost
+                                    .error_message
                             );
 
                         if (
-                            Array.isArray(parsed)
+                            Array.isArray(
+                                parsed
+                            )
                         ) {
 
                             failedGroups =
                                 parsed;
-
                         }
-
                     }
 
                 }
@@ -2359,8 +2904,6 @@ async function processOnePostBot3(
                     `❌ فشل النشر في (${targetGroup.name}): ${err.message}`,
                     'error'
                 );
-
-                botGroup = null;
 
                 await supabase
                     .from('publish_queue')
@@ -2387,14 +2930,25 @@ async function processOnePostBot3(
                     );
 
                 await sleep(
-                    randomDelay(20, 30)
+                    randomDelay(
+                        20,
+                        30
+                    )
                 );
 
                 continue;
             }
         }
 
-        await page.close();
+        return {
+            completed:
+                normalCompletion,
+
+            reason:
+                normalCompletion
+                    ? 'COMPLETED'
+                    : 'STOPPED_OR_INTERRUPTED'
+        };
 
     }
     catch (err) {
@@ -2407,21 +2961,56 @@ async function processOnePostBot3(
         await supabase
             .from('bot_counters')
             .update({
-                status: 'ERROR'
+                status:
+                    'ERROR'
             })
             .eq(
                 'bot_name',
                 BOT_ID
             );
 
+        return {
+            completed:
+                false,
+
+            reason:
+                'ERROR',
+
+            error:
+                err.message
+        };
+
     }
     finally {
 
-        await browser.close();
+        try {
+
+            if (
+                page &&
+                !page.isClosed()
+            ) {
+
+                await page.close();
+            }
+
+        }
+        catch (e) {}
+
+        try {
+
+            if (browser) {
+
+                await browser.close();
+            }
+
+        }
+        catch (e) {}
 
         if (
             imagePath &&
-            fs.existsSync(imagePath)
+            fs.existsSync(
+                imagePath
+            )
         ) {
 
             try {
@@ -2432,7 +3021,6 @@ async function processOnePostBot3(
 
             }
             catch (e) {}
-
         }
 
         await logToDashboard(
@@ -2443,35 +3031,263 @@ async function processOnePostBot3(
 }
 
 // ============================================================
-// 🔄 إعادة الإعلانات العالقة
+// 🔄 إعادة الإعلانات العالقة الخاصة بـ Bot3 فقط
 // ============================================================
 
 async function resetStuckBot3Posts() {
 
     await logToDashboard(
-        '🔄 فحص الإعلانات العالقة.',
+        '🔄 فحص إعلانات Bot3 العالقة.',
         'info'
     );
 
-    const { error } =
-        await supabase
-            .from('publish_queue')
-            .update({
-                status: 'running'
-            })
-            .eq(
-                'status',
-                'processing'
+    try {
+
+        /*
+         * مهم:
+         * لا نغيّر كل publish_queue.
+         *
+         * هنا نحاول فقط إعادة السجلات التي:
+         * - تحتوي على bot3_group
+         * أو
+         * - ما زال لديها groups_json
+         *
+         * ولا نلمس السجلات التي تخص بوتات أخرى فقط.
+         */
+
+        const {
+            data,
+            error
+        } =
+            await supabase
+                .from('publish_queue')
+                .select(
+                    'id,status,groups_json,bot3_group'
+                )
+                .eq(
+                    'status',
+                    'processing'
+                );
+
+        if (error) {
+
+            await logToDashboard(
+                `⚠️ خطأ قراءة الإعلانات العالقة: ${error.message}`,
+                'error'
             );
 
-    if (error) {
+            return;
+        }
+
+        if (
+            !data ||
+            data.length === 0
+        ) {
+
+            await logToDashboard(
+                '✅ لا توجد إعلانات Bot3 عالقة.',
+                'info'
+            );
+
+            return;
+        }
+
+        for (
+            const post
+            of data
+        ) {
+
+            let hasGroups =
+                false;
+
+            let hasBot3Group =
+                false;
+
+            if (
+                Array.isArray(
+                    post.groups_json
+                )
+            ) {
+
+                hasGroups =
+                    post.groups_json.length >
+                    0;
+
+            }
+            else if (
+                typeof post.groups_json ===
+                'string'
+            ) {
+
+                try {
+
+                    const parsed =
+                        JSON.parse(
+                            post.groups_json ||
+                            '[]'
+                        );
+
+                    hasGroups =
+                        Array.isArray(
+                            parsed
+                        ) &&
+                        parsed.length > 0;
+
+                }
+                catch (e) {}
+            }
+
+            if (
+                post.bot3_group
+            ) {
+
+                hasBot3Group =
+                    true;
+            }
+
+            /*
+             * إذا كان الإعلان يحتوي على مهمة Bot3،
+             * نعيده إلى running.
+             *
+             * إذا لم يكن فيه أي مهمة لـ Bot3،
+             * لا نلمسه.
+             */
+
+            if (
+                hasGroups ||
+                hasBot3Group
+            ) {
+
+                const {
+                    error:
+                        updateError
+                } =
+                    await supabase
+                        .from('publish_queue')
+                        .update({
+                            status:
+                                'running'
+                        })
+                        .eq(
+                            'id',
+                            post.id
+                        )
+                        .eq(
+                            'status',
+                            'processing'
+                        );
+
+                if (
+                    updateError
+                ) {
+
+                    await logToDashboard(
+                        `⚠️ فشل إعادة الإعلان #${post.id}: ${updateError.message}`,
+                        'warn'
+                    );
+
+                }
+                else {
+
+                    await logToDashboard(
+                        `🔄 تمت إعادة الإعلان #${post.id} إلى running.`,
+                        'info'
+                    );
+
+                }
+            }
+        }
+
+    }
+    catch (e) {
 
         await logToDashboard(
-            `⚠️ خطأ إعادة ضبط الإعلانات: ${error.message}`,
+            `⚠️ خطأ resetStuckBot3Posts: ${e.message}`,
             'error'
         );
 
     }
+}
+
+// ============================================================
+// 🔍 البحث عن إعلان مناسب لـ Bot3
+// ============================================================
+
+function hasBot3Work(
+    post
+) {
+
+    let groups =
+        [];
+
+    if (
+        Array.isArray(
+            post.groups_json
+        )
+    ) {
+
+        groups =
+            post.groups_json;
+
+    }
+    else if (
+        typeof post.groups_json ===
+        'string'
+    ) {
+
+        try {
+
+            groups =
+                JSON.parse(
+                    post.groups_json ||
+                    '[]'
+                );
+
+        }
+        catch (e) {
+
+            groups =
+                [];
+        }
+    }
+
+    let hasBot3Group =
+        false;
+
+    if (
+        typeof post.bot3_group ===
+            'object' &&
+        post.bot3_group !== null
+    ) {
+
+        hasBot3Group =
+            true;
+
+    }
+    else if (
+        typeof post.bot3_group ===
+        'string'
+    ) {
+
+        try {
+
+            hasBot3Group =
+                !!JSON.parse(
+                    post.bot3_group
+                );
+
+        }
+        catch (e) {
+
+            hasBot3Group =
+                false;
+        }
+    }
+
+    return (
+        groups.length > 0 ||
+        hasBot3Group
+    );
 }
 
 // ============================================================
@@ -2488,7 +3304,8 @@ async function startBot3Engine() {
     await supabase
         .from('bot_counters')
         .update({
-            status: 'RUNNING'
+            status:
+                'RUNNING'
         })
         .eq(
             'bot_name',
@@ -2504,15 +3321,18 @@ async function startBot3Engine() {
         try {
 
             // -----------------------------------------------
-            // 🛑 حالة البوت
+            // 🛑 حالة Bot3
             // -----------------------------------------------
 
             const {
-                data: counterStatus
+                data:
+                    counterStatus
             } =
                 await supabase
                     .from('bot_counters')
-                    .select('status')
+                    .select(
+                        'status'
+                    )
                     .eq(
                         'bot_name',
                         BOT_ID
@@ -2534,6 +3354,7 @@ async function startBot3Engine() {
                     'تم رصد حالة الإيقاف في المحرك الرئيسي'
                 );
 
+                return;
             }
 
             // -----------------------------------------------
@@ -2550,7 +3371,8 @@ async function startBot3Engine() {
                     .order(
                         'id',
                         {
-                            ascending: true
+                            ascending:
+                                true
                         }
                     );
 
@@ -2561,91 +3383,60 @@ async function startBot3Engine() {
                     'error'
                 );
 
-                await sleep(10000);
+                await sleep(
+                    10000
+                );
 
                 continue;
             }
 
             // -----------------------------------------------
-            // 🔎 اختيار الإعلان
+            // 🔎 اختيار إعلان Bot3
             // -----------------------------------------------
 
-            let postToRun = null;
+            let postToRun =
+                null;
 
             if (
                 data &&
                 data.length > 0
             ) {
 
-                for (const post of data) {
+                for (
+                    const post
+                    of data
+                ) {
 
-                    let groups = [];
+                    /*
+                     * لا نريد تشغيل إعلان
+                     * متوقف أو ملغي.
+                     */
 
                     if (
-                        Array.isArray(
-                            post.groups_json
+                        [
+                            'stopped',
+                            'paused',
+                            'cancelled',
+                            'published',
+                            'failed'
+                        ].includes(
+                            post.status
                         )
                     ) {
 
-                        groups =
-                            post.groups_json;
-
-                    }
-                    else if (
-                        typeof post.groups_json ===
-                        'string'
-                    ) {
-
-                        try {
-
-                            groups =
-                                JSON.parse(
-                                    post.groups_json ||
-                                    '[]'
-                                );
-
-                        }
-                        catch (e) {}
-
-                    }
-
-                    let hasBotGroup = false;
-
-                    if (
-                        typeof post.bot3_group ===
-                        'object' &&
-                        post.bot3_group !== null
-                    ) {
-
-                        hasBotGroup = true;
-
-                    }
-                    else if (
-                        typeof post.bot3_group ===
-                        'string'
-                    ) {
-
-                        try {
-
-                            hasBotGroup =
-                                !!JSON.parse(
-                                    post.bot3_group
-                                );
-
-                        }
-                        catch (e) {}
-
+                        continue;
                     }
 
                     if (
-                        groups.length > 0 ||
-                        hasBotGroup
+                        hasBot3Work(
+                            post
+                        )
                     ) {
 
-                        postToRun = post;
+                        postToRun =
+                            post;
 
                         break;
-
                     }
                 }
             }
@@ -2657,23 +3448,27 @@ async function startBot3Engine() {
             if (!postToRun) {
 
                 await logToDashboard(
-                    '🎉 لا توجد إعلانات قيد الانتظار.',
+                    '🎉 لا توجد إعلانات قيد الانتظار لـ Bot3.',
                     'success'
                 );
 
                 await supabase
                     .from('bot_counters')
                     .update({
-                        status: 'IDLE'
+                        status:
+                            'IDLE'
                     })
                     .eq(
                         'bot_name',
                         BOT_ID
                     );
 
-                await forceKillProcess(
-                    'لا توجد إعلانات قيد الانتظار'
-                );
+                /*
+                 * لا نستخدم forceKillProcess هنا مباشرة
+                 * حتى لا نسجل حالة إيقاف خاطئة.
+                 *
+                 * GitHub Action سينتهي طبيعيًا.
+                 */
 
                 return;
             }
@@ -2682,40 +3477,139 @@ async function startBot3Engine() {
             // 🔒 وضع الإعلان Processing
             // -----------------------------------------------
 
-            await supabase
-                .from('publish_queue')
-                .update({
-                    status: 'processing'
-                })
-                .eq(
-                    'id',
-                    postToRun.id
+            const {
+                error:
+                    processingError
+            } =
+                await supabase
+                    .from('publish_queue')
+                    .update({
+                        status:
+                            'processing'
+                    })
+                    .eq(
+                        'id',
+                        postToRun.id
+                    );
+
+            if (
+                processingError
+            ) {
+
+                await logToDashboard(
+                    `⚠️ تعذر وضع الإعلان #${postToRun.id} في processing: ${processingError.message}`,
+                    'warn'
                 );
+
+                await sleep(
+                    3000
+                );
+
+                continue;
+            }
 
             // -----------------------------------------------
             // 🚀 تشغيل الإعلان
             // -----------------------------------------------
 
-            await processOnePostBot3(
-                postToRun
-            );
-
-            // -----------------------------------------------
-            // 🧾 الحالة
-            // -----------------------------------------------
-
-            await supabase
-                .from('publish_queue')
-                .update({
-                    status: 'stopped'
-                })
-                .eq(
-                    'id',
-                    postToRun.id
+            const result =
+                await processOnePostBot3(
+                    postToRun
                 );
 
             // -----------------------------------------------
-            // ⏳ تأخير كبير بين الإعلانات
+            // 🧾 تحديث الحالة حسب النتيجة
+            // -----------------------------------------------
+
+            if (
+                result?.completed ===
+                true
+            ) {
+
+                /*
+                 * لا نغيّر الإعلان إلى stopped
+                 * إلا بعد اكتمال مهمة Bot3.
+                 *
+                 * إذا كانت بوتات أخرى ما زالت تعمل
+                 * فلن نغيّر حالة الإعلان إلى published
+                 * هنا؛ processOnePostBot3 هو الذي يتعامل
+                 * مع اكتمال جميع المجموعات.
+                 */
+
+                await supabase
+                    .from('publish_queue')
+                    .update({
+                        status:
+                            'stopped'
+                    })
+                    .eq(
+                        'id',
+                        postToRun.id
+                    )
+                    .eq(
+                        'status',
+                        'processing'
+                    );
+
+                await logToDashboard(
+                    `🧾 انتهت مهمة Bot3 للإعلان #${postToRun.id}.`,
+                    'info'
+                );
+
+            }
+            else {
+
+                /*
+                 * لا نضع stopped في حالة الخطأ أو
+                 * التوقف اليدوي؛ حتى يستطيع Bot3
+                 * الاستكمال لاحقًا.
+                 */
+
+                const {
+                    data:
+                        currentPost
+                } =
+                    await supabase
+                        .from('publish_queue')
+                        .select(
+                            'status'
+                        )
+                        .eq(
+                            'id',
+                            postToRun.id
+                        )
+                        .single();
+
+                if (
+                    currentPost &&
+                    currentPost.status ===
+                    'processing'
+                ) {
+
+                    await supabase
+                        .from('publish_queue')
+                        .update({
+                            status:
+                                'running'
+                        })
+                        .eq(
+                            'id',
+                            postToRun.id
+                        )
+                        .eq(
+                            'status',
+                            'processing'
+                        );
+                }
+
+                await logToDashboard(
+                    `🔄 لم تكتمل مهمة Bot3 للإعلان #${postToRun.id}. سيتم إبقاؤها قابلة للاستكمال.`,
+                    'warn'
+                );
+            }
+
+            // -----------------------------------------------
+            // ⏳ تأخير بين الإعلانات
             // -----------------------------------------------
 
             const macroDelay =
@@ -2744,14 +3638,17 @@ async function startBot3Engine() {
             await supabase
                 .from('bot_counters')
                 .update({
-                    status: 'ERROR'
+                    status:
+                        'ERROR'
                 })
                 .eq(
                     'bot_name',
                     BOT_ID
                 );
 
-            await sleep(10000);
+            await sleep(
+                10000
+            );
         }
     }
 }
@@ -2771,6 +3668,30 @@ if (
     require.main === module
 ) {
 
-    startBot3Engine();
+    startBot3Engine()
+        .catch(async err => {
 
+            console.error(
+                '❌ خطأ قاتل في Bot3:',
+                err
+            );
+
+            try {
+
+                await supabase
+                    .from('bot_counters')
+                    .update({
+                        status:
+                            'ERROR'
+                    })
+                    .eq(
+                        'bot_name',
+                        BOT_ID
+                    );
+
+            }
+            catch (e) {}
+
+            process.exit(1);
+        });
 }

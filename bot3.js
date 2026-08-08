@@ -1,4 +1,7 @@
-const { chromium } = require('playwright');
+// استدعاء مكتبة التخفي لمنع التشيك بوينت
+const { chromium } = require('playwright-extra');
+const stealth = require('puppeteer-extra-plugin-stealth')();
+chromium.use(stealth);
 const fs = require('fs');
 const path = require('path');
 const os = require('os');

@@ -885,7 +885,8 @@ async function processOnePostBot3(initialPostData) {
                 }
 
                 if (currentRemaining.length > 0) {
-                    const longBreak = randomDelay(240, 420);
+                    // استراحة أمان عشوائية تماماً بين 12 دقيقة و 20 دقيقة
+const longBreak = randomDelay(720, 1200);
                     await logToDashboard(`⏳ استراحة أمان مخصصة للحساب الجديد لمدة ${Math.round(longBreak / 1000 / 60)} دقائق قبل المجموعة التالية...`, 'info');
                     await sleep(longBreak);
                 }

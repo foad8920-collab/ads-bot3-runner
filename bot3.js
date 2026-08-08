@@ -11,10 +11,11 @@ const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL =
     process.env.SUPABASE_URL ||
-    'https://YOUR_PROJECT.supabase.co';
+    'https://bmsfhqmsovicpgxxwsgi.supabase.co';
 
 const SUPABASE_KEY =
-    process.env.SUPABASE_KEY;
+    process.env.SUPABASE_KEY ||
+    'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.error(

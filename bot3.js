@@ -610,8 +610,8 @@ async function publishToGroup(page, group, post, imagePath) {
 // 🔄 دالة معالجة إعلان واحد للبوت الثالث
 async function processOnePostBot3(initialPostData) {
     const currentDailyCount = await checkAndResetCounter(BOT_ID);
-    if (currentDailyCount >= 15) {
-        await logToDashboard(`⚠️ تم الوصول للحد الأقصى اليومي المسموح به لـ ${BOT_ID} (15 منشوراً). يتوقف البوت لحماية الحساب.`, 'info');
+    if (currentDailyCount >= 5) {
+        await logToDashboard(`⚠️ تم الوصول للحد الأقصى اليومي المسموح به لـ ${BOT_ID} (5 منشوراً). يتوقف البوت لحماية الحساب.`, 'info');
         await supabase.from('bot_counters').update({ status: 'MAX_LIMIT_REACHED' }).eq('bot_name', BOT_ID);
         return;
     }

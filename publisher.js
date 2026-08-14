@@ -21,11 +21,11 @@ const path = require('path');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
-// 🌟 تخصيص رقم الحساب والسيرفر الثاني (الافتراضي: 2)
-const ACCOUNT_NUM = process.env.ACCOUNT_NUMBER || '2';
-const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) ? `./cookies${ACCOUNT_NUM}.json` : './cookies2.json';
+// 🌟 تخصيص رقم الحساب والسيرفر الثالث (الافتراضي: 3)
+const ACCOUNT_NUM = process.env.ACCOUNT_NUMBER || '3';
+const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) ? `./cookies${ACCOUNT_NUM}.json` : './cookies3.json';
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
-const BOT_DB_NAME = `bot${ACCOUNT_NUM}`; // 🟢 استخراج اسم البوت (bot2) لمطابقة جداول اللوحة
+const BOT_DB_NAME = `bot${ACCOUNT_NUM}`; // 🟢 استخراج اسم البوت (bot3) لمطابقة جداول اللوحة
 
 // -------------------------------------------------------------------------
 // 🔗 دوال الربط بلوحة التحكم المركزية 🟢 
@@ -89,7 +89,7 @@ async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null
         await supabase.from('bot_publish_logs').insert([{
             bot_name: BOT_DB_NAME,
             ad_id: post.id ? post.id.toString() : 'Unknown',
-            ad_title: aiModifiedText || post.ai_final_text2 || post.ai_final_text || post.ad_title || 'بدون عنوان',
+            ad_title: aiModifiedText || post.ai_final_text3 || post.ai_final_text || post.ad_title || 'بدون عنوان',
             group_name: groupName,
             status: statusMsg, // SUCCESS أو FAILED
             published_at: new Date()
@@ -278,17 +278,17 @@ async function downloadImage(imageUrl, isVideo = false) {
 }
 
 async function resetStuckPosts() {
-    await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص وتصفير حقول البوت الثاني المتبقية (bot2_group)...`, 'info');
+    await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص وتصفير حقول البوت الثالث المتبقية (bot3_group)...`, 'info');
     const { error } = await supabase
         .from('publish_queue')
-        // 🟢 التعديل: تصفير حالة البوت الثاني أيضاً (bot2_status)
-        .update({ bot2_group: null, ai_final_text2: null, bot2_status: null })
-        .not('bot2_group', 'is', null);
+        // 🟢 التعديل: تصفير حالة البوت الثالث أيضاً (bot3_status)
+        .update({ bot3_group: null, ai_final_text3: null, bot3_status: null })
+        .not('bot3_group', 'is', null);
 
     if (error) {
         await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تنبيه أثناء تصفير الحقول المؤقتة: ${error.message}`, 'info');
     } else {
-        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تنظيف الطابور وتصفير نصوص القروبات المؤقتة للبوت الثاني.`, 'success');
+        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تنظيف الطابور وتصفير نصوص القروبات المؤقتة للبوت الثالث.`, 'success');
     }
 }
 
@@ -305,7 +305,7 @@ async function cleanOldLogs() {
     }
 }
 
-// 🔥 الجلب الذكي للبوت الثاني: يعتمد على عمود المجموعات الرئيسي (groups_json) فقط
+// 🔥 الجلب الذكي للبوت الثالث: يعتمد على عمود المجموعات الرئيسي (groups_json) فقط
 async function getNextPendingPost() {
     const { data, error } = await supabase
         .from('publish_queue')
@@ -322,7 +322,7 @@ async function getNextPendingPost() {
             let groups = [];
             try { groups = JSON.parse(post.groups_json || '[]'); } catch(e) {}
             // الاعتماد فقط على وجود مجموعات متبقية، وأن البوت لم يكمل هذا الإعلان بعد
-            if (groups.length > 0 && post.bot2_status !== 'COMPLETED') {
+            if (groups.length > 0 && post.bot3_status !== 'COMPLETED') {
                 return post; 
             }
         }
@@ -330,11 +330,11 @@ async function getNextPendingPost() {
     return null;
 }
 
-// 🟢 التعديل الدقيق لحماية العمود الرئيسي: التحديث هنا يطال bot2_status الخاص البوت الثاني فقط
+// 🟢 التعديل الدقيق لحماية العمود الرئيسي: التحديث هنا يطال bot3_status الخاص بالبوت الثالث فقط
 async function updatePostStatus(id, status, extra = {}) {
     const { error } = await supabase
         .from('publish_queue')
-        .update({ bot2_status: status, ...extra }) // 🟢 استخدام bot2_status
+        .update({ bot3_status: status, ...extra }) // 🟢 استخدام bot3_status
         .eq('id', id);
     if (error) await logToDashboard(`⚠️ [${ACCOUNT_NAME}] خطأ تحديث الحالة: ${error.message}`, 'error');
 }
@@ -582,7 +582,7 @@ async function publishToGroup(page, group, post, imagePath) {
             const isVideoFile = imagePath.endsWith('.mp4') || imagePath.endsWith('.mov');
             const waitTime = isVideoFile ? 65000 : 35000;
             
-            await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم إدراج الملف، ننتظر ${waitTime/1000} ثانية لرفع الملف وبدء الاستقرار...`, 'success');
+            await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم حقن مسار الملف، ننتظر ${waitTime/1000} ثانية لرفع الملف وبدء الاستقرار...`, 'success');
             await smartSleep(waitTime);
             
             try {
@@ -602,10 +602,10 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await smartSleep(randomDelay(6, 10)); 
 
-    let postText = post.ai_final_text2 || post.ai_final_text || '';
+    let postText = post.ai_final_text3 || post.ai_final_text || '';
     
     if (!postText || postText.trim() === '') {
-        await logToDashboard(`🧠 [AI] جاري صياغة نص جديد للبوت الثاني خصيصاً لمجموعة: ${group.name}...`, 'info');
+        await logToDashboard(`🧠 [AI] جاري صياغة نص جديد للبوت الثالث خصيصاً لمجموعة: ${group.name}...`, 'info');
         const aiGeneratedContent = await rewriteAdWithAI(post.ad_title, post.ad_description);
         postText = `${aiGeneratedContent}\n\n🔥 إعلان جديد على سوق الإعلانات الحديث`;
 
@@ -615,10 +615,10 @@ async function publishToGroup(page, group, post, imagePath) {
         }
         
         try {
-            await supabase.from('publish_queue').update({ ai_final_text2: postText }).eq('id', post.id);
+            await supabase.from('publish_queue').update({ ai_final_text3: postText }).eq('id', post.id);
         } catch(e) {}
     } else {
-        await logToDashboard(`📌 [Supabase] تم جلب النص الجاهز للبوت الثاني.`, 'success');
+        await logToDashboard(`📌 [Supabase] تم جلب النص الجاهز للبوت الثالث.`, 'success');
     }
 
     await logToDashboard(`📝 [Text] النص النهائي الذي سيتم لصقه:\n${postText}`, 'info');
@@ -855,7 +855,7 @@ async function processOnePost(post) {
             const updatePayload = {
                 groups_json: JSON.stringify(newRemaining)
             };
-            try { updatePayload.bot2_group = JSON.stringify(targetGroup); } catch(e) {}
+            try { updatePayload.bot3_group = JSON.stringify(targetGroup); } catch(e) {}
 
             const { error: updateErr } = await supabase
                 .from('publish_queue')
@@ -867,7 +867,7 @@ async function processOnePost(post) {
                 continue;
             }
 
-            await logToDashboard(`🎯 [${ACCOUNT_NAME}] تم سحب المجموعة (${targetGroup.name}) الخاصة بـ البوت 2 وحذفها من الطابور لضمان التوازي.`, 'success');
+            await logToDashboard(`🎯 [${ACCOUNT_NAME}] تم سحب المجموعة (${targetGroup.name}) الخاصة بـ البوت 3 وحذفها من الطابور لضمان التوازي.`, 'success');
 
             const page = await context.newPage();
             
@@ -886,7 +886,7 @@ async function processOnePost(post) {
                 
                 // جلب أحدث بيانات الإعلان لضمان توفر النص المعدل بالـ AI لتسجيله في ad_title في جدول bot_publish_logs
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                let finalAiText = latestPost?.ai_final_text2 || latestPost?.ai_final_text || freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
+                let finalAiText = latestPost?.ai_final_text3 || latestPost?.ai_final_text || freshPost.ai_final_text3 || freshPost.ai_final_text || freshPost.ad_title;
                 
                 await logPublishEvent(latestPost || freshPost, targetGroup.name, 'SUCCESS', finalAiText);
                 await incrementBotCounters();
@@ -908,7 +908,7 @@ async function processOnePost(post) {
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
                 
                 const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                let finalAiTextFail = latestPostFail?.ai_final_text2 || latestPostFail?.ai_final_text || freshPost.ai_final_text2 || freshPost.ai_final_text || freshPost.ad_title;
+                let finalAiTextFail = latestPostFail?.ai_final_text3 || latestPostFail?.ai_final_text || freshPost.ai_final_text3 || freshPost.ai_final_text || freshPost.ad_title;
                 
                 await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail);
 
@@ -922,8 +922,8 @@ async function processOnePost(post) {
                     error_message: JSON.stringify(failedGroups)
                 };
                 try {
-                    resetPayload.bot2_group = null;
-                    resetPayload.ai_final_text2 = null;
+                    resetPayload.bot3_group = null;
+                    resetPayload.ai_final_text3 = null;
                 } catch(e) {}
 
                 await supabase
@@ -973,7 +973,7 @@ async function processOnePost(post) {
 }
 
 async function start() {
-    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت الثاني...`, 'info');
+    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت الثالث...`, 'info');
 
     await resetStuckPosts();
     await cleanOldLogs();

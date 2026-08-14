@@ -37,7 +37,7 @@ async function getBotStatus() {
         .select('status')
         .eq('bot_name', BOT_DB_NAME)
         .single();
-    if (error || !data || !data.status) return 'IDLE'; 
+    if (error || !data || !data.status) return 'RUNNING'; // 🟢 جعل الافتراضي RUNNING لضمان العمل
     return data.status.toUpperCase();
 }
 
@@ -1053,7 +1053,7 @@ async function start() {
                 await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت مستيقظ ويبحث عن إعلانات في الطابور... لا يوجد شيء حالياً.`, 'info');
                 idleLogTimer = 0;
             }
-            await updateBotLastActive('IDLE');
+            // 🟢 تم إزالة updateBotLastActive('IDLE') من هنا لمنع قفل البوت ذاتياً
             await sleep(30000); 
             continue;
         }

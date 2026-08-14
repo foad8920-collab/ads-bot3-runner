@@ -1,0 +1,21 @@
+{
+  "name": "publisherbot",
+  "version": "1.0.0",
+  "description": "Facebook Group Publisher Bot for MyAdsPlatform",
+  "main": "publisher.js",
+  "scripts": {
+    "start": "node --expose-gc publisher.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
+    "axios": "^1.16.1",
+    "express": "^4.19.2",
+    "playwright": "1.62.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}

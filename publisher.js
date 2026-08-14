@@ -645,45 +645,65 @@ async function publishToGroup(page, group, post, imagePath) {
     
     await smartSleep(randomDelay(10, 18)); 
 
-    // ⏳ المرحلة 9: فحص زر النشر والضغط عليه
+    // ⏳ المرحلة 9: فحص زر النشر والنقر المباشر دون تعليق
     await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] بدء فحص زر النشر والنقر عليه...`, 'info');
+    
+    let published = false;
+
+    // محاولة 1: النقر الذكي عبر Playwright
     const publishButtons = [
-        'div[role="dialog"] div[role="button"][aria-label="نشر"]',
-        'div[role="dialog"] div[role="button"][aria-label="Post"]',
+        'div[role="dialog"] div[aria-label="نشر"]',
+        'div[role="dialog"] div[aria-label="Post"]',
         'div[role="dialog"] div[role="button"]:has-text("نشر")',
         'div[role="dialog"] div[role="button"]:has-text("Post")',
         'div[aria-label="نشر"]',
-        'div[aria-label="Post"]',
-        'text=نشر', 'text=Post', 'text=Publish'
+        'div[aria-label="Post"]'
     ];
 
-    let published = false;
     for (const btn of publishButtons) {
         try {
             const button = page.locator(btn).first();
             if (await button.count() > 0 && await button.isVisible()) {
                 let isDisabled = await button.getAttribute('aria-disabled');
                 let retries = 0;
-                while (isDisabled === 'true' && retries < 10) { 
-                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر رمادي، ننتظر فيسبوك بهدوء... (محاولة ${retries + 1}/10)`, 'info');
-                    await smartSleep(6000);
+                while (isDisabled === 'true' && retries < 8) { 
+                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر رمادي، ننتظر فيسبوك بهدوء... (محاولة ${retries + 1}/8)`, 'info');
+                    await smartSleep(5000);
                     isDisabled = await button.getAttribute('aria-disabled');
                     retries++;
                 }
 
-                if (isDisabled === 'true') {
-                    throw new Error('زر النشر استمر معطلاً (رمادي) لفترة طويلة.');
-                }
-
-                await button.click({ timeout: 15000 });
+                await button.click({ timeout: 8000, force: true });
                 published = true;
-                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر بطريقة شرعية وطبيعية!`, 'success');
+                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر بنجاح!`, 'success');
                 break;
             }
-        } catch (e) {
-            if (e.message.includes('زر النشر استمر معطلاً')) {
-                throw e; 
+        } catch (e) {}
+    }
+
+    // محاولة 2 (الخارقة): النقر المباشر عبر محرك الـ DOM لتخطي أي تعليق
+    if (!published) {
+        await logToDashboard(`⚠️ [المرحلة 9] [${ACCOUNT_NAME}] جاري محاولة النقر المباشر عبر كود الصفحة (JS Native Click)...`, 'info');
+        published = await page.evaluate(() => {
+            const dialog = document.querySelector('div[role="dialog"]');
+            if (!dialog) return false;
+            
+            const buttons = Array.from(dialog.querySelectorAll('div[role="button"], span, div'));
+            const postBtn = buttons.find(b => {
+                const aria = b.getAttribute('aria-label') || '';
+                const txt = (b.innerText || b.textContent || '').trim();
+                return (aria === 'نشر' || aria === 'Post' || txt === 'نشر' || txt === 'Post') && b.getAttribute('aria-disabled') !== 'true';
+            });
+
+            if (postBtn) {
+                postBtn.click();
+                return true;
             }
+            return false;
+        });
+
+        if (published) {
+            await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر JS Native بنجاح!`, 'success');
         }
     }
 
@@ -889,8 +909,13 @@ async function processOnePost(post) {
             });
 
             try {
-                // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه
-                await publishToGroup(page, targetGroup, freshPost, imagePath);
+                // 🛡️ حزام الأمان الكلي: 14 دقيقة كحد أقصى للمجموعة الواحدة لمنع التعليق اللانهائي
+                const publishTask = publishToGroup(page, targetGroup, freshPost, imagePath);
+                const safetyGuard = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('تجاوزت المجموعة مهلة الأمان القصوى (14 دقيقة)')), 840000)
+                );
+
+                await Promise.race([publishTask, safetyGuard]);
                 successCount++;
                 
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();

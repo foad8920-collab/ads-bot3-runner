@@ -537,9 +537,17 @@ async function publishToGroup(page, group, post, imagePath) {
     await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر الثقيلة...`, 'info');
     await smartSleep(loadWait); 
 
-    // ⏳ المرحلة 2: الفحص الأمني للجلسة والـ Checkpoint
-    if (page.url().includes('login') || page.url().includes('checkpoint')) {
-        throw new Error(`انتهت جلسة تسجيل الدخول أو يوجد Checkpoint لـ ${ACCOUNT_NAME}`);
+    // ⏳ المرحلة 2: الفحص الأمني الحقيقي للجلسة بفحص محتوى الصفحة الفعلي
+    const currentUrl = page.url();
+    const isRealLoginPage = await page.evaluate(() => {
+        const hasPasswordField = !!document.querySelector('input[type="password"]');
+        const bodyText = document.body ? document.body.innerText : '';
+        const isLocked = bodyText.includes('تم قفل حسابك') || bodyText.includes('Your Account Has Been Locked') || bodyText.includes('تأكيد هويتك') || bodyText.includes('Confirm your identity');
+        return hasPasswordField || isLocked;
+    });
+
+    if (isRealLoginPage && (currentUrl.includes('/login/') || currentUrl.includes('/checkpoint/'))) {
+        throw new Error(`انتهت جلسة تسجيل الدخول أو يوجد Checkpoint حقيقي لـ ${ACCOUNT_NAME}`);
     }
 
     // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور

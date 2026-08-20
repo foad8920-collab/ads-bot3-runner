@@ -339,7 +339,10 @@ async function openPostBox(page) {
         'div[role="tab"]:has-text("مناقشة")',
         'div[role="tab"]:has-text("Discussion")',
         'a[role="tab"]:has-text("مناقشة")',
-        'a[role="tab"]:has-text("Discussion")'
+        'a[role="tab"]:has-text("Discussion")',
+        'text="عرض المناقشات"',
+        'text="مناقشة"',
+        'text="Discussion"'
     ];
 
     for (const tabSel of discussionTabs) {
@@ -436,7 +439,7 @@ async function openPostBox(page) {
                     txt.includes('اكتب شيئًا') || 
                     txt.includes('Write something') || 
                     txt.includes('بم تفكر') || 
-                    txt.includes("What's on your mind") ||
+                    txt.includes("What's on your mind") || 
                     txt.includes('إنشاء منشور')
                 );
             });
@@ -518,9 +521,17 @@ async function pasteTextWithLines(page, postText) {
 }
 
 async function publishToGroup(page, group, post, imagePath) {
-    // ⏳ المرحلة 1: فتح المجموعة والاستقرار
-    await logToDashboard(`📢 [المرحلة 1] [${ACCOUNT_NAME}] فتح المجموعة: ${group.name} | الرابط: ${group.url}`, 'info');
-    await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    // ⏳ المرحلة 1: فتح المجموعة بوضع الجوال مع فرض تبويب المناقشة
+    let targetUrl = group.url || '';
+    targetUrl = targetUrl.replace('www.facebook.com', 'm.facebook.com');
+    if (!targetUrl.includes('m.facebook.com') && !targetUrl.includes('mbasic.facebook.com')) {
+        targetUrl = targetUrl.replace('facebook.com', 'm.facebook.com');
+    }
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    targetUrl = `${targetUrl}${separator}sorting_setting=CHRONOLOGICAL`;
+
+    await logToDashboard(`📢 [المرحلة 1] [${ACCOUNT_NAME}] فتح المجموعة بوضع الجوال: ${group.name} | الرابط: ${targetUrl}`, 'info');
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
     
     const loadWait = randomDelay(35, 50);
     await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر الثقيلة...`, 'info');
@@ -787,8 +798,10 @@ async function processOnePost(post) {
     });
 
     const context = await browser.newContext({
-        viewport: { width: 1280, height: 800 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        viewport: { width: 393, height: 851 },
+        isMobile: true,
+        hasTouch: true,
+        userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
         permissions: ['clipboard-read', 'clipboard-write']
     });
 

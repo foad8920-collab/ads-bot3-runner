@@ -521,7 +521,7 @@ async function pasteTextWithLines(page, postText) {
 }
 
 async function publishToGroup(page, group, post, imagePath) {
-    // ⏳ المرحلة 1: فتح المجموعة بوضع الجوال مع فرض تبويب المناقشة
+    // ⏳ المرحلة 1: تحويل الرابط لوضع الجوال وفرض تبويب المناقشة
     let targetUrl = group.url || '';
     targetUrl = targetUrl.replace('www.facebook.com', 'm.facebook.com');
     if (!targetUrl.includes('m.facebook.com') && !targetUrl.includes('mbasic.facebook.com')) {

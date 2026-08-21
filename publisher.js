@@ -1,10 +1,10 @@
 // 🌟 السحر هنا: حل مشكلة اختفاء المتصفح من السيرفر نهائياً (الحقن وقت التشغيل في Railway)
-process.env.PLAYWRIGHT_BROWSERS_PATH = '/tmp/pw-browsers';
+process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
 const { execSync } = require('child_process');
 try {
-    console.log("🚀 [النظام] جاري تجهيز المتصفح في مسار آمن لتجاوز أخطاء مسح Railway...");
-    execSync('npx playwright install chromium', { stdio: 'inherit' });
-    console.log("✅ [النظام] المتصفح جاهز ومحمي من الحذف 100%!");
+    console.log("🚀 [النظام] جاري تجهيز المتصفح في المسار المعتمد من Playwright...");
+    execSync('npx playwright install chromium', { stdio: 'inherit', env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: '0' } });
+    console.log("✅ [النظام] المتصفح جاهز ومحمي 100%!");
 } catch (e) {
     console.log("⚠️ [النظام] تنبيه أثناء تجهيز المتصفح:", e.message);
 }

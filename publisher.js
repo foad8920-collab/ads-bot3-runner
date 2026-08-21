@@ -8,7 +8,7 @@ const path = require('path');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
-// 🌟 تخصيص رقم الحساب والسيرفر للبوت 3 (الافتراضي: 3 لبوت 3 على Render، أو عبر متغير البيئة)
+// 🌟 تخصيص رقم الحساب والسيرفر (الافتراضي: 1 لبوت 1 على Render، أو عبر متغير البيئة)
 const ACCOUNT_NUM = (process.env.ACCOUNT_NUMBER || '3').trim();
 const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) 
     ? `./cookies${ACCOUNT_NUM}.json` 
@@ -384,10 +384,19 @@ function stopStageWatchdog() {
     currentStageInfo = null;
 }
 
+async function isComposerOpen(page) {
+    return await page.evaluate(() => {
+        const composerTextarea = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[role="dialog"] [contenteditable="true"], div[role="dialog"] div[role="textbox"], form[action*="composer"] textarea');
+        const isUrlComposer = window.location.href.includes('/composer/') || window.location.href.includes('composer');
+        const hasSubmit = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"]');
+        return !!((composerTextarea && composerTextarea.offsetParent !== null) || isUrlComposer || hasSubmit);
+    });
+}
+
 async function openPostBox(page) {
     // ⏳ المرحلة 3: التبديل لتبويب مناقشة إذا وجد لتخطي واجهة البيع والشراء
     setStage(3, 'فحص التبويبات والتبديل إلى (مناقشة)');
-    await smartSleep(randomDelay(15, 25));
+    await smartSleep(randomDelay(10, 18));
 
     const discussionTabs = [
         'div[role="tab"]:has-text("مناقشة")',
@@ -405,7 +414,7 @@ async function openPostBox(page) {
             if (await tabBtn.count() > 0 && await tabBtn.isVisible()) {
                 await tabBtn.click({ timeout: 8000, force: true });
                 await logToDashboard(`🔄 [المرحلة 3] [${ACCOUNT_NAME}] تم التبديل لتبويب (مناقشة)، ننتظر لاستقرار الواجهة...`, 'info');
-                await smartSleep(randomDelay(15, 25));
+                await smartSleep(randomDelay(8, 15));
                 break;
             }
         } catch (e) {}
@@ -413,44 +422,39 @@ async function openPostBox(page) {
 
     // ⏳ المرحلة 4: استكشاف ونقر مربع فتح المنشور
     setStage(4, 'البحث عن مربع النشر وفتحه');
-    await smartSleep(randomDelay(12, 20));
+    await smartSleep(randomDelay(8, 15));
 
-    const selectors = [
-        'span:has-text("اكتب شيئًا...")',
-        'span:has-text("Write something...")',
+    const composerActivators = [
+        'div[data-sigil*="composer-activator"]',
+        'a[href*="/composer/"]',
+        'div[role="button"]:has-text("اكتب شيئًا")',
+        'div[role="button"]:has-text("اكتب شيئاً")',
+        'div[role="button"]:has-text("بم تفكر")',
+        'div[role="button"]:has-text("What\'s on your mind")',
+        'div[role="button"]:has-text("Write something")',
+        'span:has-text("اكتب شيئًا")',
+        'span:has-text("اكتب شيئاً")',
+        'span:has-text("بم تفكر")',
+        'span:has-text("What\'s on your mind")',
+        'span:has-text("Write something")',
+        'text="اكتب شيئاً..."',
         'text="اكتب شيئًا..."',
-        'text="Write something..."',
         'text="بم تفكر؟"',
         'text="What\'s on your mind?"',
+        'text="Write something..."',
         'text="إنشاء منشور عام..."',
         'text="Create a public post..."',
-        'div[role="button"]:has-text("اكتب شيئًا...")',
-        'div[role="button"]:has-text("Write something...")',
-        'div[role="button"]:has-text("بم تفكر؟")',
-        'div[role="button"]:has-text("What\'s on your mind?")',
-        'div[role="button"]:has-text("إنشاء منشور عام...")',
-        'div[role="textbox"]',
-        'span:has-text("اكتب شيئاً...")',
-        'text="اكتب شيئاً..."',
-        'div[role="button"]:has-text("اكتب شيئاً...")',
-        'span:has-text("اكتب")',
-        'span:has-text("Write")',
-        'div[role="button"]:has-text("اكتب")',
-        'div[role="button"]:has-text("Write")',
-        'div[role="button"]:has-text("بم تفكر")',
-        'div[role="button"]:has-text("تفكر")',
-        'text=/اكتب/i',
-        'text=/تفكر/i',
-        'text=/بم تفكر/i'
+        'text="بدء مناقشة"',
+        'text="Start Discussion"'
     ];
 
-    for (const selector of selectors) {
+    for (const selector of composerActivators) {
         try {
             const element = page.locator(selector).first();
             if (await element.count() > 0 && await element.isVisible()) {
                 await element.click({ timeout: 10000, force: true });
-                await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور، ننتظر لتفتح بهدوء...`, 'info');
-                await smartSleep(randomDelay(15, 25));
+                await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر على (${selector}) لفتح مربع النشر...`, 'info');
+                await smartSleep(randomDelay(10, 18));
 
                 const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة', 'text=أوافق', 'text=Agree', 'text=قبول', 'text=Accept', 'text=إغلاق', 'text=Close', 'text=ليس الآن', 'text=Not Now'];
                 for (const cBtn of confirmBtns) {
@@ -458,28 +462,16 @@ async function openPostBox(page) {
                         const btn = page.locator(cBtn).first();
                         if (await btn.count() > 0 && await btn.isVisible()) {
                             await btn.click({ timeout: 5000, force: true });
-                            await smartSleep(randomDelay(3, 6));
+                            await smartSleep(randomDelay(3, 5));
                         }
                     } catch(e){}
                 }
 
-                await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور عبر المحدد (${selector}) بنجاح`, 'success');
-                return true;
-            }
-        } catch (e) {}
-    }
-
-    const discussionBtns = [
-        'text=بدء مناقشة', 'text=Start Discussion', 'text=مناقشة', 'text=Discussion',
-        'a[href*="/discussion"]', 'div[role="button"]:has-text("مناقشة")'
-    ];
-    for (const dSel of discussionBtns) {
-        try {
-            const dBtn = page.locator(dSel).first();
-            if (await dBtn.count() > 0 && await dBtn.isVisible()) {
-                await dBtn.click({ timeout: 10000, force: true });
-                await smartSleep(randomDelay(12, 20));
-                return true;
+                const isOpen = await isComposerOpen(page);
+                if (isOpen) {
+                    await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم تأكيد فتح مربع النشر بنجاح!`, 'success');
+                    return true;
+                }
             }
         } catch (e) {}
     }
@@ -491,10 +483,12 @@ async function openPostBox(page) {
                 const txt = (el.innerText || el.textContent || '').trim();
                 return (
                     txt.includes('اكتب شيئًا') || 
+                    txt.includes('اكتب شيئاً') || 
                     txt.includes('Write something') || 
                     txt.includes('بم تفكر') || 
                     txt.includes("What's on your mind") || 
-                    txt.includes('إنشاء منشور')
+                    txt.includes('إنشاء منشور') ||
+                    txt.includes('بدء مناقشة')
                 );
             });
             if (target) {
@@ -505,9 +499,12 @@ async function openPostBox(page) {
         });
 
         if (openedByJS) {
-            await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح نافذة المنشور بواسطة JS Event Trigger`, 'success');
-            await smartSleep(randomDelay(15, 25));
-            return true;
+            await smartSleep(randomDelay(10, 18));
+            const isOpen = await isComposerOpen(page);
+            if (isOpen) {
+                await logToDashboard(`✅ [المرحلة 4] [${ACCOUNT_NAME}] تم فتح مربع النشر عبر JS Trigger بنجاح!`, 'success');
+                return true;
+            }
         }
     } catch (e) {}
 
@@ -517,7 +514,7 @@ async function openPostBox(page) {
 async function pasteTextWithLines(page, postText) {
     // ⏳ المرحلة 7: التركيز على الحقل ولصق النص بمحاكاة بشرية كاملة
     setStage(7, 'التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية');
-    await smartSleep(randomDelay(10, 18));
+    await smartSleep(randomDelay(8, 14));
 
     const targetSelectors = [
         'textarea[name="xc_message"]',
@@ -618,7 +615,7 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور
         const opened = await openPostBox(page);
-        if (!opened) throw new Error('لم يتم العثور على مربع النشر (قد تكون الصلاحيات مختلفة)');
+        if (!opened) throw new Error('لم يتم فتح مربع النشر داخل المجموعة (قد تكون الصلاحيات مقيدة أو النشر معطلاً)');
 
         await smartSleep(randomDelay(8, 15)); 
 
@@ -774,109 +771,59 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 9: فحص زر النشر والضغط عليه مع كامل المحددات والمترادفات والفحص العميق
         setStage(9, 'فحص زر النشر والضغط عليه');
-        
-        const targetButtonSelectors = [
-            // 1. محددات فيسبوك الجوال الرسمية (Mobile Web Composer Submit)
-            'form[action*="composer"] button[type="submit"]',
-            'form[action*="composer"] input[type="submit"]',
+        let published = false;
+        let clickedMethod = '';
+
+        const submitLocators = [
             'button[name="view_post"]',
             'input[name="view_post"]',
             'div[data-sigil*="composer-submit"]',
             'button[data-sigil*="composer-submit"]',
-            'button[value="نشر"]',
-            'button[value="Post"]',
-            'button[value="مشاركة"]',
-            'button[value="Share"]',
-            'input[value="نشر"]',
-            'input[value="Post"]',
-            
-            // 2. محددات الحوار والنافذة
-            'div[role="dialog"] button[type="submit"]',
+            'form[action*="composer"] button[type="submit"]',
+            'form[action*="composer"] input[type="submit"]',
             'div[role="dialog"] div[role="button"][aria-label="نشر"]',
             'div[role="dialog"] div[role="button"][aria-label="Post"]',
-            'div[role="dialog"] div[role="button"][aria-label="مشاركة"]',
-            'div[role="dialog"] div[role="button"][aria-label="Share"]',
-            'div[role="dialog"] div[role="button"]:has-text("نشر")',
-            'div[role="dialog"] div[role="button"]:has-text("Post")',
             'div[role="dialog"] button:has-text("نشر")',
             'div[role="dialog"] button:has-text("Post")',
-            
-            // 3. أزرار الهيدر والـ Submit العامة
             'header button:has-text("نشر")',
             'header button:has-text("Post")',
             'header div[role="button"]:has-text("نشر")',
             'header div[role="button"]:has-text("Post")',
-            'div[data-mcomponent="ServerHeader"] div[role="button"]',
-            'button[type="submit"]:has-text("نشر")',
-            'button[type="submit"]:has-text("Post")',
-            'button[type="submit"]:has-text("مشاركة")',
-            'button[type="submit"]:has-text("Share")',
             'div[role="button"][aria-label="نشر"]',
             'div[role="button"][aria-label="Post"]',
-            'div[role="button"][aria-label="مشاركة"]',
-            'div[role="button"][aria-label="Share"]',
-            'div[aria-label="نشر"]',
-            'div[aria-label="Post"]',
-            'div[aria-label="مشاركة"]',
-            'div[aria-label="Share"]',
-            'div[role="button"]:has-text("نشر")',
-            'div[role="button"]:has-text("Post")',
             'button:has-text("نشر")',
-            'button:has-text("Post")',
-            'text="نشر"',
-            'text="Post"'
+            'button:has-text("Post")'
         ];
 
-        let published = false;
-
-        // المستوى 1: البحث في Playwright Locators
-        let targetEl = null;
-        let matchedSelector = '';
-
-        for (const sel of targetButtonSelectors) {
+        for (const sSel of submitLocators) {
             try {
-                const locator = page.locator(sel);
-                const count = await locator.count();
-                for (let i = 0; i < count; i++) {
-                    const el = locator.nth(i);
-                    if (await el.isVisible()) {
-                        targetEl = el;
-                        matchedSelector = sel;
-                        break;
+                const sLocator = page.locator(sSel).first();
+                if (await sLocator.count() > 0 && await sLocator.isVisible()) {
+                    let isDisabled = await sLocator.getAttribute('aria-disabled') || await sLocator.getAttribute('disabled');
+                    let retries = 0;
+                    const isVideoFile = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));
+                    const maxRetries = isVideoFile ? 15 : 6;
+
+                    while ((isDisabled === 'true' || isDisabled === 'disabled') && retries < maxRetries) {
+                        await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر غير جاهز بعد، ننتظر... (${retries + 1}/${maxRetries})`, 'info');
+                        await smartSleep(4000);
+                        isDisabled = await sLocator.getAttribute('aria-disabled') || await sLocator.getAttribute('disabled');
+                        retries++;
                     }
+
+                    await sLocator.click({ timeout: 8000, force: true, noWaitAfter: true });
+                    published = true;
+                    clickedMethod = sSel;
+                    break;
                 }
-                if (targetEl) break;
-            } catch (e) {}
+            } catch(e) {}
         }
 
-        if (targetEl) {
-            try {
-                let isDisabled = await targetEl.getAttribute('aria-disabled') || await targetEl.getAttribute('disabled');
-                let retries = 0;
-                const isVideoFile = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));
-                const maxRetries = isVideoFile ? 15 : 6;
-
-                while ((isDisabled === 'true' || isDisabled === 'disabled') && retries < maxRetries) {
-                    await logToDashboard(`⏳ [المرحلة 9] [${ACCOUNT_NAME}] زر النشر غير جاهز بعد (فيسبوك يجهز المرفقات/الفيديو)، ننتظر بهدوء... (محاولة ${retries + 1}/${maxRetries})`, 'info');
-                    await smartSleep(4000);
-                    isDisabled = await targetEl.getAttribute('aria-disabled') || await targetEl.getAttribute('disabled');
-                    retries++;
-                }
-
-                await targetEl.click({ timeout: 8000, force: true, noWaitAfter: true });
-                published = true;
-                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر المحدد (${matchedSelector}) بنجاح!`, 'success');
-            } catch (e) {
-                await logToDashboard(`⚠️ [المرحلة 9] [${ACCOUNT_NAME}] تعذر النقر المباشر على الزر (${matchedSelector})، الانتقال للفحص العميق...`, 'info');
-            }
-        }
-
-        // المستوى 2: الفحص العميق الموجه لنموذج النشر في الـ DOM (Native JS Event Trigger)
+        // المستوى 2: الفحص العميق الموجه لنموذج النشر في الـ DOM
         if (!published) {
             await logToDashboard(`🔍 [المرحلة 9] [${ACCOUNT_NAME}] جاري الفحص العميق في شجرة الـ DOM للعثور على زر النشر...`, 'info');
             
             published = await page.evaluate(() => {
-                // 1. فحص زر الـ Submit الخاص بالكومبوزر حصراً
                 const composerForm = document.querySelector('form[action*="composer"], form[data-pagelet*="Composer"], form[data-sigil*="m-composer"]');
                 if (composerForm) {
                     const submitBtn = composerForm.querySelector('button[type="submit"], input[type="submit"], button[name="view_post"], input[name="view_post"], [data-sigil*="composer-submit"]');
@@ -891,7 +838,6 @@ async function publishToGroup(page, group, post, imagePath) {
                     }
                 }
 
-                // 2. فحص أزرار الـ Submit ذات الأسماء الصريحة للنشر
                 const directButtons = Array.from(document.querySelectorAll(
                     '[data-sigil*="composer-submit"], button[name="view_post"], input[name="view_post"], button[value="نشر"], button[value="Post"]'
                 ));
@@ -904,7 +850,6 @@ async function publishToGroup(page, group, post, imagePath) {
                     }
                 }
 
-                // 3. فحص الأزرار التي تحتوي نص نشر أو post وتكون مرئية
                 const allButtons = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], a[role="button"]'));
                 for (const btn of allButtons) {
                     const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
@@ -922,62 +867,63 @@ async function publishToGroup(page, group, post, imagePath) {
                 return false;
             });
 
-            if (published) {
-                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر الفحص العميق (Native JS DOM Click) بنجاح!`, 'success');
-            }
+            if (published) clickedMethod = 'DOM Evaluated Native Click';
         }
+
+        if (!published) {
+            throw new Error('تعذر العثور على زر نشر المنشور في الصفحة.');
+        }
+
+        await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر بنجاح عبر (${clickedMethod})!`, 'success');
 
         // ⏳ المرحلة 10: مراقبة وتأكيد خروج المنشور واختفاء شاشة الكتابة
         setStage(10, 'متابعة رد فيسبوك وتأكيد وصول المنشور للمجموعة');
         await smartSleep(randomDelay(8, 15));
 
-        // التحقق الحقيقي الصارم من إرسال المنشور
-        const checkResult = await page.evaluate(() => {
-            const bodyText = document.body.innerText || '';
-            
-            // تحقق حقيقي وصريح من مراجعة الأدمن (تجنب كلمة "مسؤول" العامة)
-            const isPendingAdmin = 
-                bodyText.includes('منشورك قيد المراجعة') ||
-                bodyText.includes('تم إرسال المنشور للمسؤول') ||
-                bodyText.includes('تم إرسال منشورك إلى مسؤول') ||
-                bodyText.includes('بانتظار موافقة المسؤول') ||
-                bodyText.includes('بانتظار الموافقة') ||
-                bodyText.includes('pending admin approval') ||
-                bodyText.includes('submitted to admin') ||
-                bodyText.includes('post is pending');
+        let isPostConfirmed = false;
+        let checkAttempts = 0;
 
-            // فحص هل حقل الكتابة لا يزال مفتوحاً والنص داخله
-            const activeInput = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[contenteditable="true"], div[role="textbox"]');
-            const isInputStillPresent = activeInput && activeInput.offsetParent !== null && (activeInput.innerText || activeInput.value || '').trim().length > 10;
+        while (checkAttempts < 6) {
+            const status = await page.evaluate(() => {
+                const bodyText = document.body.innerText || '';
+                const isPending = 
+                    bodyText.includes('منشورك قيد المراجعة') ||
+                    bodyText.includes('تم إرسال المنشور للمسؤول') ||
+                    bodyText.includes('تم إرسال منشورك إلى مسؤول') ||
+                    bodyText.includes('بانتظار موافقة المسؤول') ||
+                    bodyText.includes('بانتظار الموافقة') ||
+                    bodyText.includes('pending admin approval') ||
+                    bodyText.includes('submitted to admin') ||
+                    bodyText.includes('post is pending');
 
-            // فحص هل رابط الصفحة الحالي لا يزال في صفحة الكومبوزر
-            const isStillInComposerUrl = window.location.href.includes('/composer/') || window.location.href.includes('composer');
+                const composerActive = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[role="dialog"] [contenteditable="true"]');
+                const isComposerVisible = composerActive && composerActive.offsetParent !== null;
 
-            return {
-                isPendingAdmin,
-                isInputStillPresent,
-                isStillInComposerUrl
-            };
-        });
-
-        if (checkResult.isPendingAdmin) {
-            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] المنشور تم إرساله بنجاح وهو الآن (قيد مراجعة الأدمن).`, 'success');
-        } else if (checkResult.isInputStillPresent || checkResult.isStillInComposerUrl) {
-            // محاولة نقر أخيرة طارئة قبل إعلان الفشل
-            const emergencyClicked = await page.evaluate(() => {
-                const submitBtn = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"]');
-                if (submitBtn) { submitBtn.click(); return true; }
-                return false;
+                return {
+                    isPending,
+                    isComposerVisible
+                };
             });
 
-            if (emergencyClicked) {
-                await smartSleep(10000);
-                await logToDashboard(`🚀 [المرحلة 10] [${ACCOUNT_NAME}] تم تنفيذ نقرة الإرسال الطارئة بنجاح!`, 'success');
-            } else {
-                throw new Error('تعذر إرسال المنشور؛ نافذة النشر لا تزال مفتوحة ولم يتم تنفيذ أمر النشر.');
+            if (status.isPending) {
+                await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] المنشور تم إرساله بنجاح وهو الآن (قيد مراجعة الأدمن).`, 'success');
+                isPostConfirmed = true;
+                break;
             }
-        } else {
-            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] تم تأكيد نشر المنشور بنجاح واختفاء واجهة التحرير!`, 'success');
+
+            if (!status.isComposerVisible) {
+                await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] تم إرسال المنشور بنجاح واختفت نافذة التحرير!`, 'success');
+                isPostConfirmed = true;
+                break;
+            }
+
+            await logToDashboard(`⏳ [المرحلة 10] [${ACCOUNT_NAME}] انتظار استجابة فيسبوك وإغلاق نافذة النشر... (${checkAttempts + 1}/6)`, 'info');
+            await smartSleep(5000);
+            checkAttempts++;
+        }
+
+        if (!isPostConfirmed) {
+            throw new Error('تم النقر على النشر لكن فيسبوك لم يُغلق نافذة المنشور (قد تكون هناك مشكلة في محتوى الإعلان أو قيود على المجموعة).');
         }
 
         let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));

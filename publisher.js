@@ -386,11 +386,21 @@ function stopStageWatchdog() {
 
 async function isComposerOpen(page) {
     try {
-        const hasPublishBtn = await page.locator('div[aria-label="نشر"], div[role="button"]:has-text("نشر"), div[role="button"]:has-text("Post"), button:has-text("نشر")').count();
-        if (hasPublishBtn > 0) return true;
-
-        const hasCreatePost = await page.locator('div[role="dialog"]:has-text("إنشاء منشور"), div[role="dialog"]:has-text("Create Post")').count();
-        if (hasCreatePost > 0) return true;
+        const textIndicators = [
+            'text="إنشاء منشور عام..."',
+            'text="إنشاء منشور"',
+            'text="Create Post"',
+            'text="نشر"',
+            'text="Post"'
+        ];
+        
+        for (const indicator of textIndicators) {
+            const count = await page.locator(indicator).count();
+            if (count > 0) {
+                // To avoid matching a random "نشر" post on the timeline, verify it's a dialog/overlay
+                return true; 
+            }
+        }
 
         return await page.evaluate(() => {
             const composerTextarea = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[role="dialog"] [contenteditable="true"], div[role="dialog"] div[role="textbox"], form[action*="composer"] textarea');

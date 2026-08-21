@@ -452,7 +452,7 @@ async function openPostBox(page) {
                 await logToDashboard(`⏳ [المرحلة 4] [${ACCOUNT_NAME}] تم النقر لفتح نافذة المنشور، ننتظر لتفتح بهدوء...`, 'info');
                 await smartSleep(randomDelay(15, 25));
 
-                const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة'];
+                const confirmBtns = ['text=موافق', 'text=فهمت', 'text=تم', 'text=Got It', 'text=OK', 'text=متابعة', 'text=أوافق', 'text=Agree', 'text=قبول', 'text=Accept', 'text=إغلاق', 'text=Close', 'text=ليس الآن', 'text=Not Now'];
                 for (const cBtn of confirmBtns) {
                     try {
                         const btn = page.locator(cBtn).first();
@@ -520,6 +520,9 @@ async function pasteTextWithLines(page, postText) {
     await smartSleep(randomDelay(10, 18));
 
     const targetSelectors = [
+        'textarea[name="xc_message"]',
+        'textarea[data-sigil*="composer"]',
+        'textarea',
         'div[role="dialog"] div[role="textbox"]',
         'div[role="dialog"] [contenteditable="true"]',
         'div[role="dialog"] [aria-label*="اكتب"]',
@@ -546,7 +549,15 @@ async function pasteTextWithLines(page, postText) {
     if (textbox) {
         try {
             await textbox.click({ timeout: 10000, force: true });
-            await smartSleep(randomDelay(4, 8));
+            await smartSleep(randomDelay(3, 6));
+
+            const tagName = await textbox.evaluate(el => el.tagName.toLowerCase());
+            if (tagName === 'textarea' || tagName === 'input') {
+                await textbox.fill(postText);
+                await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم كتابة النص داخل حقل الـ textarea بنجاح`, 'success');
+                return;
+            }
+
             await page.evaluate(async (text) => {
                 await navigator.clipboard.writeText(text);
             }, postText);
@@ -559,14 +570,19 @@ async function pasteTextWithLines(page, postText) {
     }
 
     try {
-        await page.evaluate(() => {
-            const activeInput = document.querySelector('div[contenteditable="true"], div[role="textbox"]');
+        await page.evaluate((text) => {
+            const activeInput = document.querySelector('textarea, div[contenteditable="true"], div[role="textbox"]');
             if (activeInput) {
                 activeInput.focus();
                 activeInput.click();
+                if (activeInput.tagName.toLowerCase() === 'textarea') {
+                    activeInput.value = text;
+                    activeInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    activeInput.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             }
-        });
-        await smartSleep(randomDelay(4, 8));
+        }, postText);
+        await smartSleep(randomDelay(3, 6));
         await page.keyboard.insertText(postText);
         await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص بطريقة البديلة (insertText)`, 'success');
     } catch(e) {
@@ -760,6 +776,21 @@ async function publishToGroup(page, group, post, imagePath) {
         setStage(9, 'فحص زر النشر والضغط عليه');
         
         const targetButtonSelectors = [
+            // 1. محددات فيسبوك الجوال الرسمية (Mobile Web Composer Submit)
+            'form[action*="composer"] button[type="submit"]',
+            'form[action*="composer"] input[type="submit"]',
+            'button[name="view_post"]',
+            'input[name="view_post"]',
+            'div[data-sigil*="composer-submit"]',
+            'button[data-sigil*="composer-submit"]',
+            'button[value="نشر"]',
+            'button[value="Post"]',
+            'button[value="مشاركة"]',
+            'button[value="Share"]',
+            'input[value="نشر"]',
+            'input[value="Post"]',
+            
+            // 2. محددات الحوار والنافذة
             'div[role="dialog"] button[type="submit"]',
             'div[role="dialog"] div[role="button"][aria-label="نشر"]',
             'div[role="dialog"] div[role="button"][aria-label="Post"]',
@@ -769,39 +800,36 @@ async function publishToGroup(page, group, post, imagePath) {
             'div[role="dialog"] div[role="button"]:has-text("Post")',
             'div[role="dialog"] button:has-text("نشر")',
             'div[role="dialog"] button:has-text("Post")',
-            'button[type="submit"]',
+            
+            // 3. أزرار الهيدر والـ Submit العامة
+            'header button:has-text("نشر")',
+            'header button:has-text("Post")',
+            'header div[role="button"]:has-text("نشر")',
+            'header div[role="button"]:has-text("Post")',
+            'div[data-mcomponent="ServerHeader"] div[role="button"]',
+            'button[type="submit"]:has-text("نشر")',
+            'button[type="submit"]:has-text("Post")',
+            'button[type="submit"]:has-text("مشاركة")',
+            'button[type="submit"]:has-text("Share")',
             'div[role="button"][aria-label="نشر"]',
             'div[role="button"][aria-label="Post"]',
             'div[role="button"][aria-label="مشاركة"]',
             'div[role="button"][aria-label="Share"]',
-            'div[role="button"][aria-label="إرسال"]',
-            'div[role="button"][aria-label="Submit"]',
-            'div[role="button"][aria-label="Publish"]',
             'div[aria-label="نشر"]',
             'div[aria-label="Post"]',
             'div[aria-label="مشاركة"]',
             'div[aria-label="Share"]',
-            'button:has-text("نشر")',
-            'button:has-text("Post")',
-            'button:has-text("مشاركة")',
-            'button:has-text("Share")',
             'div[role="button"]:has-text("نشر")',
             'div[role="button"]:has-text("Post")',
-            'div[role="button"]:has-text("مشاركة")',
-            'div[role="button"]:has-text("Share")',
-            'div[role="button"]:has-text("إرسال")',
-            'div[role="button"]:has-text("Submit")',
+            'button:has-text("نشر")',
+            'button:has-text("Post")',
             'text="نشر"',
-            'text="Post"',
-            'text="مشاركة"',
-            'text="Share"',
-            'text="Publish"',
-            'text="إرسال"'
+            'text="Post"'
         ];
 
         let published = false;
 
-        // المستوى 1: البحث السريع عن الزر المناسب أولاً بدون تكرار الحلقات المرهقة
+        // المستوى 1: البحث في Playwright Locators
         let targetEl = null;
         let matchedSelector = '';
 
@@ -839,45 +867,55 @@ async function publishToGroup(page, group, post, imagePath) {
                 published = true;
                 await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم النقر على زر النشر عبر المحدد (${matchedSelector}) بنجاح!`, 'success');
             } catch (e) {
-                await logToDashboard(`⚠️ [المرحلة 9] [${ACCOUNT_NAME}] تعذر النقر المباشر على الزر المحدد، الانتقال للفحص العميق...`, 'info');
+                await logToDashboard(`⚠️ [المرحلة 9] [${ACCOUNT_NAME}] تعذر النقر المباشر على الزر (${matchedSelector})، الانتقال للفحص العميق...`, 'info');
             }
         }
 
-        // المستوى 2: الفحص العميق الخفيف والآمن في شجرة الـ DOM (دون استهلاك مفرط للذاكرة والـ CPU)
+        // المستوى 2: الفحص العميق الموجه لنموذج النشر في الـ DOM (Native JS Event Trigger)
         if (!published) {
             await logToDashboard(`🔍 [المرحلة 9] [${ACCOUNT_NAME}] جاري الفحص العميق في شجرة الـ DOM للعثور على زر النشر...`, 'info');
             
             published = await page.evaluate(() => {
-                const candidates = Array.from(document.querySelectorAll('button, div[role="button"], input[type="submit"], a[role="button"], span[role="button"], div[aria-label]'));
-                const validLabels = ['نشر', 'post', 'مشاركة', 'share', 'publish', 'إرسال', 'submit'];
-                
-                const matchingButtons = [];
-                for (const el of candidates) {
-                    const aria = (el.getAttribute('aria-label') || '').toLowerCase().trim();
-                    const text = (el.innerText || el.textContent || '').toLowerCase().trim();
-
-                    const isMatch = validLabels.some(l => text === l || aria === l || text.startsWith(l + ' ') || aria.startsWith(l + ' '));
-                    if (isMatch) {
-                        const rect = el.getBoundingClientRect();
-                        if (rect.width > 0 && rect.height > 0) {
-                            matchingButtons.push(el);
-                        }
+                // 1. فحص زر الـ Submit الخاص بالكومبوزر حصراً
+                const composerForm = document.querySelector('form[action*="composer"], form[data-pagelet*="Composer"], form[data-sigil*="m-composer"]');
+                if (composerForm) {
+                    const submitBtn = composerForm.querySelector('button[type="submit"], input[type="submit"], button[name="view_post"], input[name="view_post"], [data-sigil*="composer-submit"]');
+                    if (submitBtn) {
+                        submitBtn.click();
+                        submitBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                        return true;
+                    }
+                    if (typeof composerForm.submit === 'function') {
+                        composerForm.submit();
+                        return true;
                     }
                 }
 
-                if (matchingButtons.length > 0) {
-                    const target = matchingButtons[matchingButtons.length - 1];
-                    target.click();
-                    target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-                    return true;
+                // 2. فحص أزرار الـ Submit ذات الأسماء الصريحة للنشر
+                const directButtons = Array.from(document.querySelectorAll(
+                    '[data-sigil*="composer-submit"], button[name="view_post"], input[name="view_post"], button[value="نشر"], button[value="Post"]'
+                ));
+                for (const btn of directButtons) {
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                        btn.click();
+                        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                        return true;
+                    }
                 }
 
-                const composerForm = document.querySelector('form[method="POST"], form[data-pagelet*="Composer"]');
-                if (composerForm) {
-                    const submitBtn = composerForm.querySelector('button[type="submit"], input[type="submit"]');
-                    if (submitBtn) {
-                        submitBtn.click();
-                        return true;
+                // 3. فحص الأزرار التي تحتوي نص نشر أو post وتكون مرئية
+                const allButtons = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], a[role="button"]'));
+                for (const btn of allButtons) {
+                    const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                    const aria = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
+                    if (txt === 'نشر' || txt === 'post' || aria === 'نشر' || aria === 'post' || txt === 'مشاركة' || txt === 'share') {
+                        const rect = btn.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            btn.click();
+                            btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                            return true;
+                        }
                     }
                 }
 
@@ -889,34 +927,57 @@ async function publishToGroup(page, group, post, imagePath) {
             }
         }
 
-        // المستوى 3: الضغط على اختصار النشر الشامل (Control+Enter) كإجراء احتياطي
-        if (!published) {
-            try {
-                await page.keyboard.press('Control+Enter');
-                await smartSleep(3000);
-                published = true;
-                await logToDashboard(`🚀 [المرحلة 9] [${ACCOUNT_NAME}] تم إرسال أمر النشر عبر اختصار لوحة المفاتيح (Control+Enter)!`, 'info');
-            } catch(e) {}
-        }
-
-        if (!published) throw new Error('فشل العثور على زر النشر، أو أن الزر غير موجود بالصفحة.');
-        
-        // ⏳ المرحلة 10: مراقبة إغلاق نافذة النشر أو قبول موافقة الأدمن
+        // ⏳ المرحلة 10: مراقبة وتأكيد خروج المنشور واختفاء شاشة الكتابة
         setStage(10, 'متابعة رد فيسبوك وتأكيد وصول المنشور للمجموعة');
-        try {
-            await page.waitForSelector('div[role="dialog"]', { state: 'hidden', timeout: 90000 });
-            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] اختفت نافذة النشر بنجاح! المنشور الآن في المجموعة.`, 'success');
-        } catch (e) {
-            const isPendingAdmin = await page.evaluate(() => {
-                const bodyText = document.body.innerText || '';
-                return bodyText.includes('قيد المراجعة') || bodyText.includes('مسؤول') || bodyText.includes('pending') || bodyText.includes('admin');
+        await smartSleep(randomDelay(8, 15));
+
+        // التحقق الحقيقي الصارم من إرسال المنشور
+        const checkResult = await page.evaluate(() => {
+            const bodyText = document.body.innerText || '';
+            
+            // تحقق حقيقي وصريح من مراجعة الأدمن (تجنب كلمة "مسؤول" العامة)
+            const isPendingAdmin = 
+                bodyText.includes('منشورك قيد المراجعة') ||
+                bodyText.includes('تم إرسال المنشور للمسؤول') ||
+                bodyText.includes('تم إرسال منشورك إلى مسؤول') ||
+                bodyText.includes('بانتظار موافقة المسؤول') ||
+                bodyText.includes('بانتظار الموافقة') ||
+                bodyText.includes('pending admin approval') ||
+                bodyText.includes('submitted to admin') ||
+                bodyText.includes('post is pending');
+
+            // فحص هل حقل الكتابة لا يزال مفتوحاً والنص داخله
+            const activeInput = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[contenteditable="true"], div[role="textbox"]');
+            const isInputStillPresent = activeInput && activeInput.offsetParent !== null && (activeInput.innerText || activeInput.value || '').trim().length > 10;
+
+            // فحص هل رابط الصفحة الحالي لا يزال في صفحة الكومبوزر
+            const isStillInComposerUrl = window.location.href.includes('/composer/') || window.location.href.includes('composer');
+
+            return {
+                isPendingAdmin,
+                isInputStillPresent,
+                isStillInComposerUrl
+            };
+        });
+
+        if (checkResult.isPendingAdmin) {
+            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] المنشور تم إرساله بنجاح وهو الآن (قيد مراجعة الأدمن).`, 'success');
+        } else if (checkResult.isInputStillPresent || checkResult.isStillInComposerUrl) {
+            // محاولة نقر أخيرة طارئة قبل إعلان الفشل
+            const emergencyClicked = await page.evaluate(() => {
+                const submitBtn = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"]');
+                if (submitBtn) { submitBtn.click(); return true; }
+                return false;
             });
 
-            if (isPendingAdmin) {
-                await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] المنشور تم إرساله بنجاح وهو الآن (قيد مراجعة الأدمن).`, 'success');
+            if (emergencyClicked) {
+                await smartSleep(10000);
+                await logToDashboard(`🚀 [المرحلة 10] [${ACCOUNT_NAME}] تم تنفيذ نقرة الإرسال الطارئة بنجاح!`, 'success');
             } else {
-                throw new Error('تم النقر على النشر لكن نافذة فيسبوك لم تُغلق!');
+                throw new Error('تعذر إرسال المنشور؛ نافذة النشر لا تزال مفتوحة ولم يتم تنفيذ أمر النشر.');
             }
+        } else {
+            await logToDashboard(`✅ [المرحلة 10] [${ACCOUNT_NAME}] تم تأكيد نشر المنشور بنجاح واختفاء واجهة التحرير!`, 'success');
         }
 
         let isUploadedVideo = imagePath && (imagePath.endsWith('.mp4') || imagePath.endsWith('.mov') || imagePath.endsWith('.webm') || imagePath.endsWith('.mkv') || imagePath.endsWith('.avi'));

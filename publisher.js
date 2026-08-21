@@ -596,8 +596,8 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 2: الفحص الأمني للجلسة والـ Checkpoint
         setStage(2, 'الفحص الأمني للجلسة والـ Checkpoint');
-        if (page.url().includes('login') || page.url().includes('checkpoint')) {
-            throw new Error(`انتهت جلسة تسجيل الدخول أو يوجد Checkpoint لـ ${ACCOUNT_NAME}`);
+        if (page.url().includes('/login') || page.url().includes('/checkpoint') || page.url().includes('consent_page')) {
+            throw new Error(`انتهت جلسة الكوكيز أو يوجد Checkpoint لـ ${ACCOUNT_NAME} (يجب تحديث ملف الكوكيز)`);
         }
 
         // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور
@@ -1170,10 +1170,12 @@ async function processOnePost(post) {
                     break;
                 }
 
-                const isCheckpoint = err.message.includes('Checkpoint') || err.message.includes('تسجيل الدخول') || err.message.includes('login');
+                const isCheckpoint = err.message.includes('Checkpoint') || err.message.includes('تسجيل الدخول') || err.message.includes('login') || err.message.includes('الكوكيز');
                 if (isCheckpoint) {
-                    await logToDashboard(`🚨 [خطر] تم رصد تشيك بوينت! إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
+                    await logToDashboard(`🚨 [خطر] تم رصد تشيك بوينت أو انتهاء الكوكيز! إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
                     await updateBotLastActive('IDLE');
+                    failedCount++;
+                    failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: 'انتهت جلسة الكوكيز وتحتاج لتحديث' });
                     await page.close();
                     break;
                 }

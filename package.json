@@ -4,8 +4,7 @@
   "description": "Facebook Group Publisher Bot for MyAdsPlatform",
   "main": "publisher.js",
   "scripts": {
-    "start": "node --expose-gc publisher.js",
-    "postinstall": "npx playwright install chromium"
+    "start": "node --expose-gc publisher.js"
   },
   "keywords": [],
   "author": "",

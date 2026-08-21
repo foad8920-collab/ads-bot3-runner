@@ -514,77 +514,64 @@ async function openPostBox(page) {
 async function pasteTextWithLines(page, postText) {
     // ⏳ المرحلة 7: التركيز على الحقل ولصق النص بمحاكاة بشرية كاملة
     setStage(7, 'التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية');
-    await smartSleep(randomDelay(8, 14));
+    await smartSleep(randomDelay(5, 10));
 
-    const targetSelectors = [
-        'textarea[name="xc_message"]',
-        'textarea[data-sigil*="composer"]',
-        'textarea',
-        'div[role="dialog"] div[role="textbox"]',
-        'div[role="dialog"] [contenteditable="true"]',
-        'div[role="dialog"] [aria-label*="اكتب"]',
-        'div[role="dialog"] [aria-label*="Write"]',
-        'div[role="dialog"] [aria-label*="بم تفكر"]',
-        'div[role="dialog"] [aria-label*="What\'s on your mind"]',
-        'div[aria-label*="اكتب شيئاً"]',
-        'div[aria-label*="Write something"]',
-        'div[contenteditable="true"]',
-        'div[role="textbox"]'
-    ];
+    const inserted = await page.evaluate((text) => {
+        // 1. فحص حقول Textarea في واجهة الجوال
+        const textarea = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], form[action*="composer"] textarea, textarea');
+        if (textarea && textarea.offsetParent !== null) {
+            textarea.focus();
+            textarea.value = text;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        }
 
-    let textbox = null;
-    for (const sel of targetSelectors) {
-        try {
-            const element = page.locator(sel).first();
-            if (await element.count() > 0 && await element.isVisible()) {
-                textbox = element;
-                break;
+        // 2. فحص حقول Contenteditable
+        const editable = document.querySelector('div[role="dialog"] [contenteditable="true"], div[contenteditable="true"], div[role="textbox"]');
+        if (editable && editable.offsetParent !== null) {
+            editable.focus();
+            document.execCommand('selectAll', false, null);
+            document.execCommand('insertText', false, text);
+            if (!editable.innerText || editable.innerText.trim().length === 0) {
+                editable.innerText = text;
             }
-        } catch (e) {}
-    }
+            editable.dispatchEvent(new Event('input', { bubbles: true }));
+            editable.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        }
 
-    if (textbox) {
-        try {
-            await textbox.click({ timeout: 10000, force: true });
-            await smartSleep(randomDelay(3, 6));
+        return false;
+    }, postText);
 
-            const tagName = await textbox.evaluate(el => el.tagName.toLowerCase());
-            if (tagName === 'textarea' || tagName === 'input') {
-                await textbox.fill(postText);
-                await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم كتابة النص داخل حقل الـ textarea بنجاح`, 'success');
-                return;
-            }
+    if (!inserted) {
+        // محاولة بديلة عبر Playwright Locator إذا لم ينجح الـ evaluate
+        const targetSelectors = [
+            'textarea[name="xc_message"]',
+            'textarea[data-sigil*="composer"]',
+            'textarea',
+            'div[role="dialog"] [contenteditable="true"]',
+            'div[contenteditable="true"]'
+        ];
 
-            await page.evaluate(async (text) => {
-                await navigator.clipboard.writeText(text);
-            }, postText);
-            await page.keyboard.press('Control+V');
-            await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم لصق النص مع الحفاظ على الأسطر`, 'success');
-            return;
-        } catch (err) {
-            await logToDashboard(`⚠️ [المرحلة 7] [${ACCOUNT_NAME}] فشل Clipboard، سيتم استخدام التعبئة البديلة insertText...`, 'info');
+        let filled = false;
+        for (const sel of targetSelectors) {
+            try {
+                const element = page.locator(sel).first();
+                if (await element.count() > 0 && await element.isVisible()) {
+                    await element.fill(postText, { timeout: 8000 });
+                    filled = true;
+                    break;
+                }
+            } catch(e) {}
+        }
+
+        if (!filled) {
+            throw new Error('تعذر العثور على حقل نص صالح ومتاح للكتابة داخل مربع النشر.');
         }
     }
 
-    try {
-        await page.evaluate((text) => {
-            const activeInput = document.querySelector('textarea, div[contenteditable="true"], div[role="textbox"]');
-            if (activeInput) {
-                activeInput.focus();
-                activeInput.click();
-                if (activeInput.tagName.toLowerCase() === 'textarea') {
-                    activeInput.value = text;
-                    activeInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    activeInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            }
-        }, postText);
-        await smartSleep(randomDelay(3, 6));
-        await page.keyboard.insertText(postText);
-        await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص بطريقة البديلة (insertText)`, 'success');
-    } catch(e) {
-        throw new Error('تعذر العثور على حقل نص صالح للكتابة داخل هذه المجموعة');
-    }
+    await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال نص المنشور بنجاح!`, 'success');
 }
 
 async function publishToGroup(page, group, post, imagePath) {
@@ -715,7 +702,7 @@ async function publishToGroup(page, group, post, imagePath) {
                 const extraWait = randomDelay(8, 15);
                 await smartSleep(extraWait); 
             } else {
-                await logToDashboard(`⚠️ [المرحلة 6] [${ACCOUNT_NAME}] تعذر العثور على حقل رفع الملفات، سيتم النشر كنص فقط.`, 'info');
+                throw new Error('تعذر رفع ملف الوسائط (الصورة/الفيديو) داخل هذه المجموعة. تم إيقاف النشر لعدم نشر الإعلان بدون المرفقات.');
             }
         }
         
@@ -748,11 +735,7 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 7: لصق النص ومحاكاة الكتابة البشرية
         await pasteTextWithLines(page, postText);
-        
-        await page.keyboard.press('Space');
-        await smartSleep(1000);
-        await page.keyboard.press('Backspace');
-        await smartSleep(2000);
+        await smartSleep(randomDelay(4, 8));
 
         // ⏳ المرحلة 8: انتظار تفاعل النظام مع النص والروابط وتوليد بطاقة المعاينة
         setStage(8, 'انتظار تفاعل النظام وتوليد بطاقة معاينة الروابط والنص');
@@ -966,9 +949,15 @@ async function processOnePost(post) {
     if (mediaUrl !== '') {
         try {
             imagePath = await downloadImage(mediaUrl, isVideoPost);
-            if (imagePath) await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل الملف بنجاح: ${imagePath}`, 'success');
+            if (imagePath && fs.existsSync(imagePath)) {
+                await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل الملف بنجاح: ${imagePath}`, 'success');
+            } else {
+                throw new Error('لم يتم حفظ الملف المحمل على القرص');
+            }
         } catch (err) {
-            await logToDashboard(`⚠️ [${ACCOUNT_NAME}] فشل تحميل الملف، سيتم النشر كنص فقط: ${err.message}`, 'info');
+            await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل تحميل ملف الوسائط (${err.message}). إيقاف معالجة الإعلان لعدم النشر بدون وسائط.`, 'error');
+            await updatePostStatus(post.id, 'FAILED', { error_message: `فشل تحميل ملف المرفقات: ${err.message}` });
+            return;
         }
     } else {
         await logToDashboard(`ℹ️ [${ACCOUNT_NAME}] الإعلان لا يحتوي على ملف مرفوع. سيعتمد النشر على النص والروابط فقط.`, 'info');
@@ -1132,8 +1121,24 @@ async function processOnePost(post) {
             });
 
             try {
-                // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه (مطابقة تامة للبوت 2)
-                await publishToGroup(page, targetGroup, freshPost, imagePath);
+                // 🚀 حماية زمنية صارمة: 15 دقيقة كأقصى حد لنشر المجموعة الواحدة
+                const GROUP_MAX_TIMEOUT_MS = 15 * 60 * 1000;
+                let groupTimeoutTimer = null;
+                const groupTimeoutPromise = new Promise((_, reject) => {
+                    groupTimeoutTimer = setTimeout(() => {
+                        reject(new Error('تجاوزت المجموعة الحد الأقصى للوقت المسموح (15 دقيقة) وتم إيقافها تلقائياً.'));
+                    }, GROUP_MAX_TIMEOUT_MS);
+                });
+
+                try {
+                    await Promise.race([
+                        publishToGroup(page, targetGroup, freshPost, imagePath),
+                        groupTimeoutPromise
+                    ]);
+                } finally {
+                    if (groupTimeoutTimer) clearTimeout(groupTimeoutTimer);
+                }
+
                 successCount++;
                 
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();

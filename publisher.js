@@ -385,12 +385,22 @@ function stopStageWatchdog() {
 }
 
 async function isComposerOpen(page) {
-    return await page.evaluate(() => {
-        const composerTextarea = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[role="dialog"] [contenteditable="true"], div[role="dialog"] div[role="textbox"], form[action*="composer"] textarea');
-        const isUrlComposer = window.location.href.includes('/composer/') || window.location.href.includes('composer');
-        const hasSubmit = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"]');
-        return !!((composerTextarea && composerTextarea.offsetParent !== null) || isUrlComposer || hasSubmit);
-    });
+    try {
+        const hasPublishBtn = await page.locator('div[aria-label="نشر"], div[role="button"]:has-text("نشر"), div[role="button"]:has-text("Post"), button:has-text("نشر")').count();
+        if (hasPublishBtn > 0) return true;
+
+        const hasCreatePost = await page.locator('div[role="dialog"]:has-text("إنشاء منشور"), div[role="dialog"]:has-text("Create Post")').count();
+        if (hasCreatePost > 0) return true;
+
+        return await page.evaluate(() => {
+            const composerTextarea = document.querySelector('textarea[name="xc_message"], textarea[data-sigil*="composer"], div[role="dialog"] [contenteditable="true"], div[role="dialog"] div[role="textbox"], form[action*="composer"] textarea');
+            const isUrlComposer = window.location.href.includes('/composer/') || window.location.href.includes('composer');
+            const hasSubmit = document.querySelector('button[name="view_post"], [data-sigil*="composer-submit"], form[action*="composer"] button[type="submit"]');
+            return !!((composerTextarea && composerTextarea.offsetParent !== null) || isUrlComposer || hasSubmit);
+        });
+    } catch (e) {
+        return false;
+    }
 }
 
 async function openPostBox(page) {

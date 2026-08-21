@@ -272,7 +272,8 @@ async function resetStuckPosts() {
     await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص وتصفير حقول البوت المتبقية (bot${ACCOUNT_NUM}_group)...`, 'info');
     const updateObj = {};
     updateObj[`bot${ACCOUNT_NUM}_group`] = null;
-    updateObj[`ai_final_text${ACCOUNT_NUM}`] = null;
+    const aiColKey = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACCOUNT_NUM}`;
+    updateObj[aiColKey] = null;
     updateObj[`bot${ACCOUNT_NUM}_status`] = null;
 
     const { error } = await supabase
@@ -621,7 +622,7 @@ async function publishToGroup(page, group, post, imagePath) {
     await smartSleep(randomDelay(10, 18)); 
 
     // ⏳ المرحلة 5: تجهيز أو صياغة محتوى الذكاء الاصطناعي
-    const aiColKey = `ai_final_text${ACCOUNT_NUM}`;
+    const aiColKey = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACCOUNT_NUM}`;
     let postText = post[aiColKey] || post.ai_final_text || '';
     
     if (!postText || postText.trim() === '') {
@@ -919,7 +920,7 @@ async function processOnePost(post) {
                 successCount++;
                 
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                const aiColKey = `ai_final_text${ACCOUNT_NUM}`;
+                const aiColKey = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACCOUNT_NUM}`;
                 let finalAiText = latestPost?.[aiColKey] || latestPost?.ai_final_text || freshPost[aiColKey] || freshPost.ai_final_text || freshPost.ad_title;
                 
                 await logPublishEvent(latestPost || freshPost, targetGroup.name, 'SUCCESS', finalAiText);
@@ -944,7 +945,7 @@ async function processOnePost(post) {
                 await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
                 
                 const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
-                const aiColKey = `ai_final_text${ACCOUNT_NUM}`;
+                const aiColKey = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACCOUNT_NUM}`;
                 let finalAiTextFail = latestPostFail?.[aiColKey] || latestPostFail?.ai_final_text || freshPost[aiColKey] || freshPost.ai_final_text || freshPost.ad_title;
                 
                 await logPublishEvent(latestPostFail || freshPost, targetGroup.name, 'FAILED', finalAiTextFail);
@@ -959,7 +960,7 @@ async function processOnePost(post) {
                     error_message: JSON.stringify(failedGroups)
                 };
                 const grpColKey = `bot${ACCOUNT_NUM}_group`;
-                const aiColKey = `ai_final_text${ACCOUNT_NUM}`;
+                const aiColKey = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACCOUNT_NUM}`;
                 try {
                     resetPayload[grpColKey] = null;
                     resetPayload[aiColKey] = null;
@@ -1057,7 +1058,7 @@ async function start() {
                 await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت مستيقظ ويبحث عن إعلانات في الطابور... لا يوجد شيء حالياً.`, 'info');
                 idleLogTimer = 0;
             }
-            await updateBotLastActive('IDLE');
+            await updateBotLastActive();
             await sleep(30000); 
             continue;
         }

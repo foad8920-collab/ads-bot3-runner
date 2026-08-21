@@ -758,24 +758,29 @@ async function publishToGroup(page, group, post, imagePath) {
         let clickedMethod = '';
 
         const submitLocators = [
+            'div[role="dialog"] div[role="button"]:has-text("نشر")',
+            'div[role="dialog"] div[role="button"]:has-text("Post")',
+            'div[role="dialog"] div[role="button"]:has-text("مشاركة")',
+            'div[role="dialog"] div[role="button"]:has-text("Share")',
+            'div[role="button"]:has-text("نشر")',
+            'div[role="button"]:has-text("Post")',
+            'div[role="button"]:has-text("مشاركة")',
+            'div[role="button"]:has-text("Share")',
+            'div[aria-label="نشر"]',
+            'div[aria-label="Post"]',
+            'div[aria-label="مشاركة"]',
+            'div[role="dialog"] button:has-text("نشر")',
+            'div[role="dialog"] button:has-text("Post")',
+            'button:has-text("نشر")',
+            'button:has-text("Post")',
             'button[name="view_post"]',
             'input[name="view_post"]',
             'div[data-sigil*="composer-submit"]',
             'button[data-sigil*="composer-submit"]',
             'form[action*="composer"] button[type="submit"]',
             'form[action*="composer"] input[type="submit"]',
-            'div[role="dialog"] div[role="button"][aria-label="نشر"]',
-            'div[role="dialog"] div[role="button"][aria-label="Post"]',
-            'div[role="dialog"] button:has-text("نشر")',
-            'div[role="dialog"] button:has-text("Post")',
-            'header button:has-text("نشر")',
-            'header button:has-text("Post")',
             'header div[role="button"]:has-text("نشر")',
-            'header div[role="button"]:has-text("Post")',
-            'div[role="button"][aria-label="نشر"]',
-            'div[role="button"][aria-label="Post"]',
-            'button:has-text("نشر")',
-            'button:has-text("Post")'
+            'header button:has-text("نشر")'
         ];
 
         for (const sSel of submitLocators) {
@@ -807,6 +812,21 @@ async function publishToGroup(page, group, post, imagePath) {
             await logToDashboard(`🔍 [المرحلة 9] [${ACCOUNT_NAME}] جاري الفحص العميق في شجرة الـ DOM للعثور على زر النشر...`, 'info');
             
             published = await page.evaluate(() => {
+                // 1. البحث داخل الحوار (Dialog / Modal) أولاً
+                const dialogs = Array.from(document.querySelectorAll('div[role="dialog"], [aria-label*="منشور"], [aria-label*="Post"], div[data-pagelet*="Composer"]'));
+                for (const dlg of dialogs) {
+                    const btns = Array.from(dlg.querySelectorAll('div[role="button"], button, span[role="button"], a[role="button"]'));
+                    for (const b of btns) {
+                        const txt = (b.innerText || b.textContent || b.getAttribute('aria-label') || '').trim();
+                        if (txt === 'نشر' || txt === 'Post' || txt === 'مشاركة' || txt === 'Share') {
+                            b.click();
+                            b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                            return true;
+                        }
+                    }
+                }
+
+                // 2. البحث في نموذج الكومبوزر المباشر
                 const composerForm = document.querySelector('form[action*="composer"], form[data-pagelet*="Composer"], form[data-sigil*="m-composer"]');
                 if (composerForm) {
                     const submitBtn = composerForm.querySelector('button[type="submit"], input[type="submit"], button[name="view_post"], input[name="view_post"], [data-sigil*="composer-submit"]');
@@ -821,23 +841,11 @@ async function publishToGroup(page, group, post, imagePath) {
                     }
                 }
 
-                const directButtons = Array.from(document.querySelectorAll(
-                    '[data-sigil*="composer-submit"], button[name="view_post"], input[name="view_post"], button[value="نشر"], button[value="Post"]'
-                ));
-                for (const btn of directButtons) {
-                    const rect = btn.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) {
-                        btn.click();
-                        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-                        return true;
-                    }
-                }
-
-                const allButtons = Array.from(document.querySelectorAll('button, div[role="button"], span[role="button"], a[role="button"]'));
+                // 3. البحث في كامل الصفحة عن أي زر نشر مرئي
+                const allButtons = Array.from(document.querySelectorAll('div[role="button"], button, span[role="button"], a[role="button"], input[type="submit"]'));
                 for (const btn of allButtons) {
-                    const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                    const aria = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
-                    if (txt === 'نشر' || txt === 'post' || aria === 'نشر' || aria === 'post' || txt === 'مشاركة' || txt === 'share') {
+                    const txt = (btn.innerText || btn.textContent || btn.getAttribute('aria-label') || btn.value || '').trim();
+                    if (txt === 'نشر' || txt === 'Post' || txt === 'مشاركة' || txt === 'Share') {
                         const rect = btn.getBoundingClientRect();
                         if (rect.width > 0 && rect.height > 0) {
                             btn.click();
@@ -851,6 +859,15 @@ async function publishToGroup(page, group, post, imagePath) {
             });
 
             if (published) clickedMethod = 'DOM Evaluated Native Click';
+        }
+
+        // المستوى 3: إرسال أمر النشر عبر اختصار لوحة المفاتيح المعتمد في فيسبوك (Control+Enter)
+        if (!published) {
+            try {
+                await page.keyboard.press('Control+Enter');
+                published = true;
+                clickedMethod = 'Keyboard Shortcut (Control+Enter)';
+            } catch(e) {}
         }
 
         if (!published) {

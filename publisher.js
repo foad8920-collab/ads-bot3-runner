@@ -612,8 +612,10 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 2: الفحص الأمني للجلسة والـ Checkpoint
         setStage(2, 'الفحص الأمني للجلسة والـ Checkpoint');
-        if (page.url().includes('login') || page.url().includes('checkpoint')) {
-            throw new Error(`انتهت جلسة تسجيل الدخول أو يوجد Checkpoint لـ ${ACCOUNT_NAME}`);
+        const currentUrl = page.url().toLowerCase();
+        const isTrueCheckpoint = currentUrl.includes('/checkpoint/') || currentUrl.includes('/login.php') || currentUrl.includes('/two_step_verification/');
+        if (isTrueCheckpoint) {
+            throw new Error(`FATAL_CHECKPOINT_OR_LOGIN_EXPIRED: تم تحويل الصفحة إلى (${page.url()})`);
         }
 
         // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور
@@ -1202,9 +1204,9 @@ async function processOnePost(post) {
                     break;
                 }
 
-                const isCheckpoint = err.message.includes('Checkpoint') || err.message.includes('تسجيل الدخول') || err.message.includes('login');
-                if (isCheckpoint) {
-                    await logToDashboard(`🚨 [خطر] تم رصد تشيك بوينت! إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
+                const isFatalCheckpoint = err.message && err.message.startsWith('FATAL_CHECKPOINT_OR_LOGIN_EXPIRED');
+                if (isFatalCheckpoint) {
+                    await logToDashboard(`🚨 [خطر] ${err.message}. تم إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
                     await updateBotLastActive('IDLE');
                     await page.close();
                     break;

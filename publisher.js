@@ -17,7 +17,7 @@ const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
 const BOT_DB_NAME = `bot${ACCOUNT_NUM}`;
 const BOT_GROUP_FIELD = `bot${ACCOUNT_NUM}_group`;
 const BOT_STATUS_FIELD = `bot${ACCOUNT_NUM}_status`;
-const BOT_AI_FIELD = ACCOUNT_NUM === '1' ? 'ai_final_text1' : `ai_final_text${ACCOUNT_NUM}`;
+const BOT_AI_FIELD = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACCOUNT_NUM}`;
 
 // -------------------------------------------------------------------------
 // 🔗 دوال الربط بلوحة التحكم المركزية 🟢 

@@ -1181,6 +1181,10 @@ async function processOnePost(post) {
             });
 
             try {
+                // 🚀 إرسال حالة (جاري النشر) لتظهر برتقالية في لوحة التحكم
+                let initialAiTitle = freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
+                await logPublishEvent(freshPost, targetGroup.name, 'PROCESSING', initialAiTitle);
+
                 // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه (مطابقة تامة للبوت 2)
                 await publishToGroup(page, targetGroup, freshPost, imagePath);
                 successCount++;

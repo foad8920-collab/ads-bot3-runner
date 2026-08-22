@@ -517,7 +517,7 @@ async function openPostBox(page) {
 async function pasteTextWithLines(page, postText) {
     // ⏳ المرحلة 7: التركيز على الحقل ولصق النص بمحاكاة بشرية كاملة
     setStage(7, 'التركيز على الحقل ولصق النص ومحاكاة الكتابة البشرية');
-    await smartSleep(randomDelay(10, 18));
+    await smartSleep(randomDelay(6, 12));
 
     const targetSelectors = [
         'textarea[name="xc_message"]',
@@ -548,8 +548,8 @@ async function pasteTextWithLines(page, postText) {
 
     if (textbox) {
         try {
-            await textbox.click({ timeout: 10000, force: true });
-            await smartSleep(randomDelay(3, 6));
+            await textbox.click({ timeout: 8000, force: true });
+            await smartSleep(randomDelay(2, 4));
 
             const tagName = await textbox.evaluate(el => el.tagName.toLowerCase());
             if (tagName === 'textarea' || tagName === 'input') {
@@ -558,14 +558,12 @@ async function pasteTextWithLines(page, postText) {
                 return;
             }
 
-            await page.evaluate(async (text) => {
-                await navigator.clipboard.writeText(text);
-            }, postText);
-            await page.keyboard.press('Control+V');
-            await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم لصق النص مع الحفاظ على الأسطر`, 'success');
+            // إدخال النص بطريقة سريعة تحافظ على الأسطر ولا تعلق في بيئة Docker/Linux السحابية
+            await page.keyboard.insertText(postText);
+            await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص مع الحفاظ على الأسطر بنجاح`, 'success');
             return;
         } catch (err) {
-            await logToDashboard(`⚠️ [المرحلة 7] [${ACCOUNT_NAME}] فشل Clipboard، سيتم استخدام التعبئة البديلة insertText...`, 'info');
+            await logToDashboard(`⚠️ [المرحلة 7] [${ACCOUNT_NAME}] تنبيه أثناء إدخال النص، محاولة بالـ DOM المباشر...`, 'info');
         }
     }
 
@@ -574,17 +572,16 @@ async function pasteTextWithLines(page, postText) {
             const activeInput = document.querySelector('textarea, div[contenteditable="true"], div[role="textbox"]');
             if (activeInput) {
                 activeInput.focus();
-                activeInput.click();
                 if (activeInput.tagName.toLowerCase() === 'textarea') {
                     activeInput.value = text;
                     activeInput.dispatchEvent(new Event('input', { bubbles: true }));
                     activeInput.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                    document.execCommand('insertText', false, text);
                 }
             }
         }, postText);
-        await smartSleep(randomDelay(3, 6));
-        await page.keyboard.insertText(postText);
-        await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص بطريقة البديلة (insertText)`, 'success');
+        await logToDashboard(`✅ [المرحلة 7] [${ACCOUNT_NAME}] تم إدخال النص بطريقة البديلة (DOM Trigger)`, 'success');
     } catch(e) {
         throw new Error('تعذر العثور على حقل نص صالح للكتابة داخل هذه المجموعة');
     }
@@ -1221,10 +1218,26 @@ async function processOnePost(post) {
                 await page.close();
                 await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم تدمير صفحة المجموعة وتفريغ الذاكرة.`, 'info');
 
+                // دمج الأخطاء مع أي أخطاء سابقة مسجلة لضمان عدم ضياع أي مجموعة إطلاقاً
+                let currentAllErrors = [...failedGroups];
+                try {
+                    const { data: latestRow } = await supabase.from('publish_queue').select('error_message').eq('id', post.id).single();
+                    if (latestRow && latestRow.error_message) {
+                        const parsed = JSON.parse(latestRow.error_message);
+                        if (Array.isArray(parsed)) {
+                            parsed.forEach(p => {
+                                if (!currentAllErrors.some(c => (c.name && c.name === p.name) || (c.url && c.url === p.url))) {
+                                    currentAllErrors.push(p);
+                                }
+                            });
+                        }
+                    }
+                } catch(e){}
+
                 const resetPayload = {
                     success_count: successCount,
-                    failed_count: failedCount,
-                    error_message: JSON.stringify(failedGroups)
+                    failed_count: currentAllErrors.length,
+                    error_message: JSON.stringify(currentAllErrors)
                 };
                 try {
                     resetPayload[BOT_GROUP_FIELD] = null;

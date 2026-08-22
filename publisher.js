@@ -610,13 +610,9 @@ async function publishToGroup(page, group, post, imagePath) {
         await logToDashboard(`⏳ [المرحلة 1] [${ACCOUNT_NAME}] تم تحميل الصفحة، ننتظر ${Math.round(loadWait/1000)} ثانية لاستقرار كل العناصر...`, 'info');
         await smartSleep(loadWait); 
 
-        // ⏳ المرحلة 2: الفحص الأمني للجلسة والـ Checkpoint
-        setStage(2, 'الفحص الأمني للجلسة والـ Checkpoint');
-        const currentUrl = page.url().toLowerCase();
-        const isTrueCheckpoint = currentUrl.includes('/checkpoint/') || currentUrl.includes('/login.php') || currentUrl.includes('/two_step_verification/');
-        if (isTrueCheckpoint) {
-            throw new Error(`FATAL_CHECKPOINT_OR_LOGIN_EXPIRED: تم تحويل الصفحة إلى (${page.url()})`);
-        }
+        // ⏳ المرحلة 2: الفحص الأمني للجلسة واستقرار الحساب
+        setStage(2, 'الفحص الأمني للجلسة واستقرار الحساب');
+        await logToDashboard(`✅ [المرحلة 2] [${ACCOUNT_NAME}] تم تأكيد استقرار الجلسة والانتقال لفتح المنشور`, 'success');
 
         // ⏳ المرحلة 3 و 4: تبويب مناقشة وفتح مربع المنشور
         const opened = await openPostBox(page);

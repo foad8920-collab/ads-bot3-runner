@@ -67,7 +67,7 @@ async function rewriteAdWithGemini(title, description, options = {}) {
         const models = await cachedModelsPromise;
         const preferred = selectGeminiModel(models.data?.models);
         if (!preferred) throw new Error('No Gemini text-generation model is available');
-        const response = axios.post(
+        const response = await axios.post(
             `https://generativelanguage.googleapis.com/v1beta/${preferred.name}:generateContent`,
             { contents: [{ parts: [{ text: buildPrompt(original, protectedTerms, retry) }] }] },
             { headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, timeout: 60000 }

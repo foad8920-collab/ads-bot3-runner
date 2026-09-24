@@ -5,19 +5,34 @@ chromium.use(stealth);
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
+const { cookieSettingKey, normalizeCookies } = require('./cookie-utils');
+const { rewriteAdWithGemini } = require('./ai-utils');
+const { createCreativeVariant } = require('./media-utils');
 
-// 🌟 تخصيص رقم الحساب والسيرفر للبوت 1 (الافتراضي: 1 لبوت 1 على Render، أو عبر متغير البيئة)
-const ACCOUNT_NUM = (process.env.ACCOUNT_NUMBER || '3').trim();
-const COOKIE_FILE = fs.existsSync(`./cookies${ACCOUNT_NUM}.json`) 
-    ? `./cookies${ACCOUNT_NUM}.json` 
-    : (fs.existsSync('./cookies3.json') ? './cookies3.json' : './cookies.json');
+const ACCOUNT_NUM = (process.env.ACCOUNT_NUMBER || '').trim();
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim();
+const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+if (ACCOUNT_NUM !== '3') {
+    console.error('This workflow currently supports account 3 only.');
+    process.exit(1);
+}
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required environment variables.');
+    process.exit(1);
+}
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
 const BOT_DB_NAME = `bot${ACCOUNT_NUM}`;
 const BOT_GROUP_FIELD = `bot${ACCOUNT_NUM}_group`;
 const BOT_STATUS_FIELD = `bot${ACCOUNT_NUM}_status`;
 const BOT_AI_FIELD = ACCOUNT_NUM === '1' ? 'ai_final_text' : `ai_final_text${ACCOUNT_NUM}`;
+const ACTION_STARTED_AT = Date.now();
+const ACTION_SOFT_LIMIT_MS = 300 * 60 * 1000;
+const ACTION_WORK_RESERVE_MS = 20 * 60 * 1000;
+
+function hasActionTime(reserveMs = 0) {
+    return Date.now() - ACTION_STARTED_AT + reserveMs < ACTION_SOFT_LIMIT_MS;
+}
 
 // -------------------------------------------------------------------------
 // 🔗 دوال الربط بلوحة التحكم المركزية 🟢 
@@ -30,8 +45,8 @@ if (typeof globalThis.WebSocket === 'undefined') {
 }
 
 const supabase = createClient(
-    'https://bmsfhqmsovicpgxxwsgi.supabase.co',
-    'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef',
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY,
     {
         auth: { persistSession: false, autoRefreshToken: false }
     }
@@ -39,62 +54,69 @@ const supabase = createClient(
 
 const TEMP_DIR = './temp';
 
-async function getBotStatus() {
+async function getAccountCookies() {
+    const settingKey = cookieSettingKey(ACCOUNT_NUM);
+    const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', settingKey)
+        .maybeSingle();
+
+    if (error) throw new Error('Unable to read this account\'s cookies from Supabase');
+    if (!data?.value) throw new Error(`No cookies are configured in Supabase for account ${ACCOUNT_NUM}`);
+
     try {
-        const { data, error } = await supabase
-            .from('bot_counters')
-            .select('status')
-            .eq('bot_name', BOT_DB_NAME)
-            .single();
-        if (error || !data || !data.status) return 'IDLE'; 
-        return data.status.toUpperCase();
-    } catch (e) {
-        return 'RUNNING'; // في حال حدوث خطأ شبكة عابر لا نوقف البوت فوراً
+        const rawCookies = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+        return normalizeCookies(rawCookies);
+    } catch {
+        throw new Error(`Cookies configured for account ${ACCOUNT_NUM} are invalid`);
     }
 }
 
+async function getBotStatus() {
+    const { data, error } = await supabase
+        .from('bot_counters')
+        .select('status')
+        .eq('bot_name', BOT_DB_NAME)
+        .maybeSingle();
+    if (error) throw new Error('Failed to read bot status from Supabase');
+    return data?.status ? data.status.toUpperCase() : 'IDLE';
+}
+
 async function updateBotLastActive(forceStatus = null) {
-    try {
-        const updateData = { bot_name: BOT_DB_NAME, last_active: new Date() };
-        if (forceStatus) updateData.status = forceStatus;
-        
-        await supabase.from('bot_counters').upsert(updateData, { onConflict: 'bot_name' });
-    } catch(e) {}
+    const updateData = { bot_name: BOT_DB_NAME, last_active: new Date() };
+    if (forceStatus) updateData.status = forceStatus;
+    const { error } = await supabase.from('bot_counters').upsert(updateData, { onConflict: 'bot_name' });
+    if (error) throw new Error('Failed to update the bot status in Supabase');
 }
 
 // 🟢 حارس الحد اليومي (15 مجموعة كحد أقصى)
 async function checkDailyLimit() {
-    try {
-        const { data, error } = await supabase
-            .from('bot_counters')
-            .select('daily_count')
-            .eq('bot_name', BOT_DB_NAME)
-            .single();
-        if (data && data.daily_count >= 15) {
-            return true;
-        }
-    } catch(e) {}
-    return false;
+    const { data, error } = await supabase
+        .from('bot_counters')
+        .select('daily_count')
+        .eq('bot_name', BOT_DB_NAME)
+        .maybeSingle();
+    if (error) throw new Error('Failed to read the daily publishing counter from Supabase');
+    return Number(data?.daily_count || 0) >= 15;
 }
 
 async function incrementBotCounters() {
-    try {
-        const { data, error } = await supabase.from('bot_counters').select('daily_count, total_count').eq('bot_name', BOT_DB_NAME).single();
-        let daily = (data && data.daily_count) ? data.daily_count : 0;
-        let total = (data && data.total_count) ? data.total_count : 0;
-        
-        const newDaily = daily + 1;
-        const newTotal = total + 1;
-        const targetStatus = newDaily >= 15 ? 'IDLE' : 'RUNNING';
-
-        await supabase.from('bot_counters').upsert({
-            bot_name: BOT_DB_NAME,
-            daily_count: newDaily,
-            total_count: newTotal,
-            last_active: new Date(),
-            status: targetStatus
-        }, { onConflict: 'bot_name' });
-    } catch(e) {}
+    const { data, error } = await supabase.from('bot_counters')
+        .select('daily_count, total_count').eq('bot_name', BOT_DB_NAME).maybeSingle();
+    if (error) throw new Error('Failed to read the publishing counter in Supabase');
+    const daily = Number(data?.daily_count || 0);
+    const total = Number(data?.total_count || 0);
+    const newDaily = daily + 1;
+    const newTotal = total + 1;
+    const { error: updateError } = await supabase.from('bot_counters').upsert({
+        bot_name: BOT_DB_NAME,
+        daily_count: newDaily,
+        total_count: newTotal,
+        last_active: new Date(),
+        status: newDaily >= 15 ? 'IDLE' : 'RUNNING'
+    }, { onConflict: 'bot_name' });
+    if (updateError) throw new Error('Failed to update the publishing counter in Supabase');
 }
 
 // 🟢 إرسال أو تحديث سجل النشر المباشر دون تكرار
@@ -105,18 +127,19 @@ async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null
         const adIdStr = post.id ? post.id.toString() : 'Unknown';
 
         if (existingLogId) {
-            await supabase.from('bot_publish_logs')
+            const { error } = await supabase.from('bot_publish_logs')
                 .update({
                     status: statusMsg,
                     ad_title: title,
                     published_at: new Date()
                 })
                 .eq('id', existingLogId);
+            if (error) throw new Error('Unable to update the publishing log');
             return existingLogId;
         }
 
         if (statusMsg === 'PROCESSING') {
-            const { data } = await supabase.from('bot_publish_logs').insert([{
+            const { data, error } = await supabase.from('bot_publish_logs').insert([{
                 bot_name: BOT_DB_NAME,
                 ad_id: adIdStr,
                 ad_title: title,
@@ -124,6 +147,7 @@ async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null
                 status: statusMsg,
                 published_at: new Date()
             }]).select('id').single();
+            if (error || !data?.id) throw new Error('Unable to create the publishing checkpoint');
             return data?.id || null;
         } else {
             const { data: processingRow } = await supabase.from('bot_publish_logs')
@@ -137,16 +161,17 @@ async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null
                 .single();
 
             if (processingRow?.id) {
-                await supabase.from('bot_publish_logs')
+                const { error } = await supabase.from('bot_publish_logs')
                     .update({
                         status: statusMsg,
                         ad_title: title,
                         published_at: new Date()
                     })
                     .eq('id', processingRow.id);
+                if (error) throw new Error('Unable to update the publishing log');
                 return processingRow.id;
             } else {
-                const { data } = await supabase.from('bot_publish_logs').insert([{
+                const { data, error } = await supabase.from('bot_publish_logs').insert([{
                     bot_name: BOT_DB_NAME,
                     ad_id: adIdStr,
                     ad_title: title,
@@ -154,11 +179,12 @@ async function logPublishEvent(post, groupName, statusMsg, aiModifiedText = null
                     status: statusMsg,
                     published_at: new Date()
                 }]).select('id').single();
+                if (error || !data?.id) throw new Error('Unable to create the publishing log');
                 return data?.id || null;
             }
         }
     } catch(e) {
-        return null;
+        throw new Error('Failed to record a publishing event in Supabase');
     }
 }
 
@@ -169,33 +195,6 @@ function getMemoryLog() {
     const heapMB = (memory.heapUsed / 1024 / 1024).toFixed(1);
     return `📊 [RAM: ${rssMB} MB | Heap: ${heapMB} MB]`;
 }
-
-// 🌟 تشغيل سيرفر ويب خفيف لمنع Render من إيقاف الخدمة
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.send(`🚀 FB Bot Dedicated Instance - ${ACCOUNT_NAME} is running 24/7 with 10-Step Architecture!`));
-
-app.get('/restart-bot', async (req, res) => {
-    await logToDashboard(`🚨 [${ACCOUNT_NAME}] تم طلب إعادة التشغيل يدوياً من المطور!`, 'error');
-    res.send(`🔄 جاري إعادة تشغيل السيرفر والبوت الخاص بـ ${ACCOUNT_NAME}...`);
-    process.exit(1); 
-});
-
-app.listen(PORT, () => {
-    console.log(`🌐 Web Server active on port ${PORT} for ${ACCOUNT_NAME}`);
-    
-    // تنبيه الاستيقاظ الذاتي كل 5 دقائق
-    setInterval(async () => {
-        try {
-            const myServerUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`; 
-            await axios.get(myServerUrl, { timeout: 10000 });
-            await logToDashboard(`⏰ [Self-Ping] [${ACCOUNT_NAME}] تم تنبيه السيرفر بنجاح للحفاظ عليه مستيقظاً.`, 'info');
-            await updateBotLastActive();
-        } catch (e) {
-            console.log(`⚠️ [Self-Ping] [${ACCOUNT_NAME}] فشل إرسال تنبيه الاستيقاظ:`, e.message);
-        }
-    }, 300000);
-});
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -224,67 +223,6 @@ function randomDelay(minSeconds, maxSeconds) {
     const min = minSeconds * 1000;
     const max = maxSeconds * 1000;
     return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي مع جلب النماذج النشطة ديناميكياً
-async function rewriteAdWithAI(title, description) {
-    const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-    
-    if (!apiKey) {
-        await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY في متغيرات البيئة.`, 'info');
-        return `${title}\n\n${description}`;
-    }
-
-    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب، جديد، ومختلف تماماً مع الحفاظ على نفس الفكرة والمعلومات الأساسية والروابط وأرقام الهواتف إن وجدت. اجعل العبارات طبيعية وغير مكررة.
-العنوان الاصلي: ${title}
-الوصف الاصلي: ${description}
-
-أعطني النتيجة مباشرة بالتنسيق التالي:
-العنوان: [العنوان الجديد]
-الوصف: [الوصف الجديد]`;
-
-    try {
-        const modelsResponse = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, { timeout: 15000 });
-        const validModels = (modelsResponse.data.models || []).filter(m => 
-            m.supportedGenerationMethods && 
-            m.supportedGenerationMethods.includes('generateContent') &&
-            m.name.includes('gemini')
-        );
-
-        if (validModels.length === 0) {
-            await logToDashboard(`⚠️ [AI] مفتاحك لا يحتوي على أي نماذج تدعم توليد النصوص حالياً.`, 'info');
-            return `${title}\n\n${description}`;
-        }
-
-        for (const modelObj of validModels) {
-            const exactModelName = modelObj.name;
-            try {
-                await logToDashboard(`🧠 [AI] جاري محاولة الاتصال بالنموذج: ${exactModelName}...`, 'info');
-
-                const response = await axios({
-                    method: 'post',
-                    url: `https://generativelanguage.googleapis.com/v1beta/${exactModelName}:generateContent?key=${apiKey}`,
-                    headers: { 'Content-Type': 'application/json' },
-                    data: { contents: [{ parts: [{ text: promptText }] }] },
-                    timeout: 60000
-                });
-
-                const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (aiText && aiText.trim().length > 10) {
-                    await logToDashboard(`✨ [AI] تم صياغة نص المنشور بنجاح بواسطة (${exactModelName})!`, 'success');
-                    return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
-                }
-            } catch (err) {
-                await logToDashboard(`⚠️ [AI] تنبيه أثناء استدعاء النموذج (${exactModelName}): ${err.response?.data?.error?.message || err.message}`, 'info');
-                continue;
-            }
-        }
-    } catch (e) {
-        await logToDashboard(`⚠️ [AI] فشل الاتصال بقائمة نماذج Gemini: ${e.response?.data?.error?.message || e.message}`, 'info');
-    }
-
-    await logToDashboard(`⚠️ [AI] تعذر إعادة الصياغة بالذكاء الاصطناعي، سيتم استخدام النص الأصلي.`, 'info');
-    return `${title}\n\n${description}`;
 }
 
 async function logToDashboard(message, type = 'info') {
@@ -340,21 +278,128 @@ async function downloadImage(imageUrl, isVideo = false) {
 // 🔄 تصفير الحقول المعلقة الخاصة بهذا البوت فقط لعدم الإضرار بالبوتات الأخرى
 async function resetStuckPosts() {
     await logToDashboard(`🔄 [${ACCOUNT_NAME}] جاري فحص وتصفير حقول البوت المتبقية (${BOT_GROUP_FIELD})...`, 'info');
-    const updateObj = {};
-    updateObj[BOT_GROUP_FIELD] = null;
-    updateObj[BOT_STATUS_FIELD] = null;
-    updateObj[BOT_AI_FIELD] = null;
-
-    const { error } = await supabase
+    const { data: activePosts, error: activePostsError } = await supabase
         .from('publish_queue')
-        .update(updateObj)
+        .select(`id, groups_json, failed_count, error_message, ${BOT_GROUP_FIELD}`)
         .not(BOT_GROUP_FIELD, 'is', null);
 
-    if (error) {
-        await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تنبيه أثناء تصفير الحقول المؤقتة: ${error.message}`, 'info');
-    } else {
-        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم تنظيف الطابور وتصفير نصوص القروبات المؤقتة للبوت.`, 'success');
+    if (activePostsError) throw new Error('Unable to recover the previous publishing checkpoint');
+
+    for (const activePost of activePosts || []) {
+        let interruptedGroup;
+        try {
+            interruptedGroup = JSON.parse(activePost[BOT_GROUP_FIELD]);
+        } catch {
+            throw new Error('A saved publishing checkpoint is invalid; refusing to discard it');
+        }
+        if (!interruptedGroup || typeof interruptedGroup !== 'object') {
+            throw new Error('A saved publishing checkpoint is invalid; refusing to discard it');
+        }
+
+        const { data: publishLog, error: processingLogError } = await supabase
+            .from('bot_publish_logs')
+            .select('id, status')
+            .eq('bot_name', BOT_DB_NAME)
+            .eq('ad_id', String(activePost.id))
+            .eq('group_name', (interruptedGroup.name || '').trim())
+            .in('status', ['PROCESSING', 'SUCCESS', 'FAILED'])
+            .order('published_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (processingLogError) throw new Error('Unable to reconcile an interrupted publish log');
+
+        if (publishLog?.id && publishLog.status !== 'SUCCESS') {
+            // A FAILED or PROCESSING record is not safe to retry automatically. Preserve
+            // it as a visible failure so an uncertain external publish is never duplicated.
+            let priorErrors = [];
+            try {
+                const parsedErrors = JSON.parse(activePost.error_message || '[]');
+                if (Array.isArray(parsedErrors)) priorErrors = parsedErrors;
+            } catch {}
+            const alreadyRecorded = priorErrors.some(item =>
+                (item.url && item.url === interruptedGroup.url) ||
+                (item.name && item.name === interruptedGroup.name)
+            );
+            if (!alreadyRecorded) priorErrors.push({
+                    name: interruptedGroup.name,
+                    url: interruptedGroup.url,
+                    error: 'The runner stopped during this group; check its publish log before retrying.'
+                });
+            const { error: checkpointError } = await supabase.from('publish_queue').update({
+                failed_count: priorErrors.length,
+                error_message: JSON.stringify(priorErrors)
+            }).eq('id', activePost.id);
+            if (checkpointError) throw new Error('Unable to save the interrupted group checkpoint');
+
+            if (publishLog.status === 'PROCESSING') {
+                const { error: markLogError } = await supabase.from('bot_publish_logs').update({
+                    status: 'FAILED',
+                    published_at: new Date()
+                }).eq('id', publishLog.id);
+                if (markLogError) throw new Error('Unable to close an interrupted publishing log');
+            }
+        } else if (!publishLog) {
+            // No PROCESSING log means the group was removed from the queue before the
+            // publish attempt began, so it is safe to return it to the front of the queue.
+            let queuedGroups;
+            try {
+                queuedGroups = JSON.parse(activePost.groups_json || '[]');
+            } catch {
+                throw new Error('The publish queue checkpoint is invalid; refusing to discard it');
+            }
+            const alreadyQueued = queuedGroups.some(group =>
+                (group.url && group.url === interruptedGroup.url) ||
+                (group.name && group.name === interruptedGroup.name)
+            );
+            if (!alreadyQueued) queuedGroups.unshift(interruptedGroup);
+            const { error: requeueError } = await supabase.from('publish_queue')
+                .update({ groups_json: JSON.stringify(queuedGroups) })
+                .eq('id', activePost.id);
+            if (requeueError) throw new Error('Unable to restore an unstarted publishing checkpoint');
+        }
+
+        const clearedFields = { [BOT_GROUP_FIELD]: null, [BOT_AI_FIELD]: null };
+        const { error: clearError } = await supabase.from('publish_queue')
+            .update(clearedFields)
+            .eq('id', activePost.id);
+        if (clearError) throw new Error('Unable to clear a recovered publishing checkpoint');
     }
+
+    const { data: danglingLogs, error: danglingLogsError } = await supabase
+        .from('bot_publish_logs')
+        .select('id')
+        .eq('bot_name', BOT_DB_NAME)
+        .eq('status', 'PROCESSING');
+    if (danglingLogsError) throw new Error('Unable to check for unfinished publishing logs');
+    if (danglingLogs?.length) {
+        const { error: updateLogsError } = await supabase.from('bot_publish_logs')
+            .update({ status: 'FAILED', published_at: new Date() })
+            .eq('bot_name', BOT_DB_NAME)
+            .eq('status', 'PROCESSING');
+        if (updateLogsError) throw new Error('Unable to close unfinished publishing logs');
+    }
+
+    const { data: runningPosts, error: runningPostsError } = await supabase
+        .from('publish_queue')
+        .select(`id, groups_json, failed_count, ${BOT_STATUS_FIELD}`)
+        .eq(BOT_STATUS_FIELD, 'RUNNING');
+    if (runningPostsError) throw new Error('Unable to recover the previous ad status');
+    for (const runningPost of runningPosts || []) {
+        let groups = [];
+        try { groups = JSON.parse(runningPost.groups_json || '[]'); } catch {}
+        if (groups.length > 0) {
+            await updatePostStatus(runningPost.id, 'IDLE');
+        } else {
+            const failed = Number(runningPost.failed_count || 0) > 0;
+            await updatePostStatus(runningPost.id, failed ? 'FAILED' : 'COMPLETED', {
+                status: failed ? 'failed' : 'published',
+                ...(!failed ? { published_at: new Date(), error_message: null } : {})
+            });
+        }
+    }
+
+    await logToDashboard(`✅ [${ACCOUNT_NAME}] اكتملت مراجعة واستعادة نقاط التوقف والسجلات.`, 'success');
 }
 
 async function cleanOldLogs() {
@@ -377,8 +422,8 @@ async function getNextPendingPost() {
         .order('created_at', { ascending: true });
 
     if (error) {
-        await logToDashboard(`❌ [${ACCOUNT_NAME}] خطأ في جلب الطلب: ${error.message}`, 'error');
-        return null;
+        await logToDashboard(`❌ [${ACCOUNT_NAME}] تعذر قراءة طابور النشر من Supabase.`, 'error');
+        throw new Error('Failed to read the publish queue from Supabase');
     }
 
     if (data && data.length > 0) {
@@ -401,7 +446,10 @@ async function updatePostStatus(id, status, extra = {}) {
         .from('publish_queue')
         .update(updatePayload) 
         .eq('id', id);
-    if (error) await logToDashboard(`⚠️ [${ACCOUNT_NAME}] خطأ تحديث الحالة: ${error.message}`, 'error');
+    if (error) {
+        await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تعذر تحديث حالة الإعلان في Supabase.`, 'error');
+        throw new Error('Failed to update an ad status in Supabase');
+    }
 }
 
 // -------------------------------------------------------------------------
@@ -768,28 +816,13 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 5: تجهيز وصياغة محتوى الذكاء الاصطناعي
         setStage(5, 'تجهيز وصياغة محتوى الإعلان بالذكاء الاصطناعي');
-        let postText = post[BOT_AI_FIELD] || post.ai_final_text || '';
-        
-        if (!postText || postText.trim() === '') {
-            await logToDashboard(`🧠 [المرحلة 5] [AI] صياغة نص جديد بالذكاء الاصطناعي لـ ${ACCOUNT_NAME} لمجموعة: ${group.name}...`, 'info');
-            const aiGeneratedContent = await rewriteAdWithAI(post.ad_title, post.ad_description);
-            postText = `${aiGeneratedContent}\n\n🔥 إعلان جديد على سوق الإعلانات الحديث`;
-
-            let fbUrl = post.facebook_url || '';
-            if (fbUrl.trim() !== '') {
-                postText += `\n\n${fbUrl.trim()}`;
-            }
-            
-            try {
-                const aiUpdatePayload = {};
-                aiUpdatePayload[BOT_AI_FIELD] = postText;
-                await supabase.from('publish_queue').update(aiUpdatePayload).eq('id', post.id);
-            } catch(e) {}
-        } else {
-            await logToDashboard(`📌 [المرحلة 5] [Supabase] تم جلب النص الجاهز لـ ${ACCOUNT_NAME}.`, 'success');
-        }
-
-        await logToDashboard(`📝 [Text] النص النهائي الذي سيتم لصقه:\n${postText}`, 'info');
+        await logToDashboard(`🧠 [المرحلة 5] إعادة صياغة الإعلان والتحقق منه لهذه المجموعة.`, 'info');
+        const generatedText = await rewriteAdWithGemini(post.ad_title, post.ad_description, {
+            log: (message) => logToDashboard(message, message.startsWith('Gemini rewrite accepted') ? 'success' : 'info')
+        });
+        let postText = generatedText;
+        const fbUrl = String(post.facebook_url || '').trim();
+        if (fbUrl && !postText.includes(fbUrl)) postText += `\n\n${fbUrl}`;
 
         // ⏳ المرحلة 6: رفع الميديا ومعاينة الملف
         if (imagePath) {
@@ -1149,7 +1182,7 @@ async function publishToGroup(page, group, post, imagePath) {
     }
 }
 
-async function processOnePost(post) {
+async function processOnePost(post, accountCookies) {
     await logToDashboard(`🔥 [${ACCOUNT_NAME}] بدأ معالجة الإعلان: ${post.ad_title}`, 'info');
     
     await updatePostStatus(post.id, 'RUNNING', { started_at: new Date() });
@@ -1161,36 +1194,57 @@ async function processOnePost(post) {
     if (post.ad_video && post.ad_video.trim() !== '') {
         mediaUrl = post.ad_video.trim();
         isVideoPost = true; 
-        await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (ad_video): ${mediaUrl}`, 'info');
+        await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد فيديو في حقل الإعلان.`, 'info');
     } else if (post.video_url && post.video_url.trim() !== '') {
         mediaUrl = post.video_url.trim();
         isVideoPost = true; 
-        await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد رابط فيديو في السوبيس (video_url): ${mediaUrl}`, 'info');
+        await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد فيديو في حقل الإعلان.`, 'info');
     } else if (post.ad_image && post.ad_image.trim() !== '') {
         mediaUrl = post.ad_image.trim();
         const lowerImg = mediaUrl.toLowerCase();
         if (lowerImg.includes('.mp4') || lowerImg.includes('.mov') || lowerImg.includes('.webm') || lowerImg.includes('.mkv') || lowerImg.includes('.avi')) {
             isVideoPost = true; 
-            await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد فيديو عبر حقل الصورة (ad_image): ${mediaUrl}`, 'info');
+            await logToDashboard(`🎥 [${ACCOUNT_NAME}] تم رصد فيديو في حقل الإعلان.`, 'info');
         } else {
-            await logToDashboard(`📸 [${ACCOUNT_NAME}] تم رصد رابط صورة في السوبيس (ad_image): ${mediaUrl}`, 'info');
+            await logToDashboard(`📸 [${ACCOUNT_NAME}] تم رصد صورة في حقل الإعلان.`, 'info');
         }
     }
 
     let imagePath = null;
+    let originalImagePath = null;
+    let creativeImagePath = null;
+    const removeTemporaryMedia = () => {
+        for (const filePath of new Set([imagePath, originalImagePath, creativeImagePath].filter(Boolean))) {
+            try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch {}
+        }
+    };
     if (mediaUrl !== '') {
         try {
-            imagePath = await downloadImage(mediaUrl, isVideoPost);
-            if (imagePath) await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل الملف بنجاح: ${imagePath}`, 'success');
+            originalImagePath = await downloadImage(mediaUrl, isVideoPost);
+            imagePath = originalImagePath;
+            if (!isVideoPost) {
+                try {
+                    creativeImagePath = await createCreativeVariant(originalImagePath);
+                    if (creativeImagePath) {
+                        imagePath = creativeImagePath;
+                        await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تجهيز نسخة صورة بإطار هامشي بسيط؛ الأصل محفوظ دون تغيير.`, 'info');
+                    }
+                } catch {
+                    await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تعذرت معالجة الصورة؛ سيُستخدم الأصل كما هو.`, 'info');
+                }
+            }
+            if (imagePath) await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل ملف الوسائط المؤقت وتجهيزه.`, 'success');
         } catch (err) {
-            await logToDashboard(`⚠️ [${ACCOUNT_NAME}] فشل تحميل الملف، سيتم النشر كنص فقط: ${err.message}`, 'info');
+            await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تعذر تحميل الوسيط؛ سيستمر النشر بالنص فقط.`, 'info');
         }
     } else {
         await logToDashboard(`ℹ️ [${ACCOUNT_NAME}] الإعلان لا يحتوي على ملف مرفوع. سيعتمد النشر على النص والروابط فقط.`, 'info');
     }
 
-    // 🌟 إعدادات متصفح منخفضة استهلاك الذاكرة مخصصة لـ Render مع دعم معالجة الميديا
-    const browser = await chromium.launch({
+    // Browser settings for media processing on the GitHub-hosted runner.
+    let browser;
+    try {
+        browser = await chromium.launch({
         headless: true,
         args: [
             '--no-sandbox',
@@ -1210,53 +1264,34 @@ async function processOnePost(post) {
             '--disable-infobars',
             '--hide-scrollbars'
         ]
-    });
+        });
+    } catch (error) {
+        removeTemporaryMedia();
+        throw error;
+    }
 
-    const context = await browser.newContext({
-        viewport: { width: 393, height: 851 },
-        isMobile: true,
-        hasTouch: true,
-        userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
-        permissions: ['clipboard-read', 'clipboard-write']
-    });
+    let context;
+    try {
+        context = await browser.newContext({
+            viewport: { width: 393, height: 851 },
+            isMobile: true,
+            hasTouch: true,
+            userAgent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+            permissions: ['clipboard-read', 'clipboard-write']
+        });
 
-    // 🌟 حظر الخطوط فقط لتسريع التصفح وتوفير الذاكرة مع السماح لحركة الميديا والفيديو
-    await context.route('**/*', (route) => {
-        const resourceType = route.request().resourceType();
-        if (resourceType === 'font') {
-            return route.abort();
-        }
-        return route.continue();
-    });
-
-    if (fs.existsSync(COOKIE_FILE)) {
-        try {
-            await logToDashboard(`🍪 [${ACCOUNT_NAME}] جاري قراءة وتنسيق الكوكيز للحساب السحابي (${COOKIE_FILE})...`, 'info');
-            const cookiesString = fs.readFileSync(COOKIE_FILE, 'utf8');
-            let rawCookies = JSON.parse(cookiesString);
-            
-            const formattedCookies = rawCookies.map(cookie => {
-                const c = { ...cookie };
-                if (typeof c.sameSite === 'string') {
-                    const lower = c.sameSite.toLowerCase();
-                    if (lower === 'lax') c.sameSite = 'Lax';
-                    else if (lower === 'strict') c.sameSite = 'Strict';
-                    else if (lower === 'none' || lower === 'no_restriction') c.sameSite = 'None';
-                    else delete c.sameSite;
-                } else delete c.sameSite;
-
-                if (c.expirationDate && !c.expires) c.expires = c.expirationDate;
-                delete c.id; delete c.storeId; delete c.hostOnly;
-                return c;
-            });
-
-            await context.addCookies(formattedCookies);
-            await logToDashboard(`✅ [${ACCOUNT_NAME}] تم حقن الكوكيز بنجاح وتأمين الجلسة!`, 'success');
-        } catch (e) {
-            await logToDashboard(`❌ [${ACCOUNT_NAME}] خطأ في معالجة الكوكيز: ${e.message}`, 'error');
-        }
-    } else {
-        await logToDashboard(`⚠️ تنبيه: ملف الكوكيز (${COOKIE_FILE}) غير موجود.`, 'info');
+        await context.route('**/*', (route) => {
+            const resourceType = route.request().resourceType();
+            if (resourceType === 'font') return route.abort();
+            return route.continue();
+        });
+        await context.addCookies(accountCookies);
+        await logToDashboard(`✅ [${ACCOUNT_NAME}] تم إعداد جلسة المتصفح من كوكيز Supabase.`, 'success');
+    } catch (error) {
+        if (context) await context.close().catch(() => {});
+        await browser.close().catch(() => {});
+        removeTemporaryMedia();
+        throw new Error('Unable to prepare the browser session from Supabase cookies');
     }
 
     let successCount = post.success_count || 0;
@@ -1273,14 +1308,22 @@ async function processOnePost(post) {
     } catch (e) {}
 
     let remainingGroups = [];
+    let stoppedByUser = false;
 
     try {
         while (true) {
+            if (!hasActionTime(ACTION_WORK_RESERVE_MS)) {
+                await logToDashboard(`⏱️ [${ACCOUNT_NAME}] انتهت نافذة التشغيل الآمنة؛ تم حفظ نقطة التوقف.`, 'info');
+                stoppedByUser = true;
+                break;
+            }
+
             // 🛑 1. فحص الحد اليومي (15 مجموعة)
             const limitReached = await checkDailyLimit();
             if (limitReached) {
                 await logToDashboard(`🛑 [${ACCOUNT_NAME}] تم الوصول للحد الأقصى اليومي (15 مجموعة). جاري إيقاف البوت وتحويله إلى IDLE...`, 'error');
                 await updateBotLastActive('IDLE');
+                stoppedByUser = true;
                 break;
             }
 
@@ -1288,6 +1331,7 @@ async function processOnePost(post) {
             let currentStatus = await getBotStatus();
             if (currentStatus === 'IDLE') {
                 await logToDashboard(`🛑 [${ACCOUNT_NAME}] تم رصد أمر إيقاف (IDLE) من اللوحة، جاري الانسحاب...`, 'info');
+                stoppedByUser = true;
                 break;
             }
 
@@ -1347,9 +1391,9 @@ async function processOnePost(post) {
             });
 
             let currentLogId = null;
+            const initialAiTitle = freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
             try {
                 // 🚀 إرسال حالة (جاري النشر) لتظهر برتقالية في لوحة التحكم
-                let initialAiTitle = freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
                 currentLogId = await logPublishEvent(freshPost, targetGroup.name, 'PROCESSING', initialAiTitle);
 
                 // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه (مطابقة تامة للبوت 2)
@@ -1364,21 +1408,47 @@ async function processOnePost(post) {
 
             } catch (err) {
                 if (err.message === 'STOPPED_BY_USER') {
-                    await page.close();
+                    stoppedByUser = true;
+                    failedCount++;
+                    failedGroups.push({
+                        name: targetGroup.name,
+                        url: targetGroup.url,
+                        error: 'Stop requested while publishing; verify the Facebook group before retrying.'
+                    });
+                    await logPublishEvent(freshPost, targetGroup.name, 'FAILED', initialAiTitle, currentLogId);
                     break;
+                }
+
+                if (!currentLogId) {
+                    const { data: queuedPost, error: queuedPostError } = await supabase
+                        .from('publish_queue').select('groups_json').eq('id', post.id).single();
+                    if (queuedPostError) throw new Error('Unable to restore the group after checkpoint logging failed');
+                    let queuedGroups = [];
+                    try { queuedGroups = JSON.parse(queuedPost.groups_json || '[]'); } catch {}
+                    const isQueued = queuedGroups.some(group =>
+                        (group.url && group.url === targetGroup.url) ||
+                        (group.name && group.name === targetGroup.name)
+                    );
+                    if (!isQueued) queuedGroups.unshift(targetGroup);
+                    const { error: restoreError } = await supabase.from('publish_queue')
+                        .update({ groups_json: JSON.stringify(queuedGroups) }).eq('id', post.id);
+                    if (restoreError) throw new Error('Unable to restore the group after checkpoint logging failed');
+                    throw new Error('Publishing stopped because its Supabase checkpoint could not be saved');
                 }
 
                 const isFatalCheckpoint = err.message && err.message.startsWith('FATAL_CHECKPOINT_OR_LOGIN_EXPIRED');
                 if (isFatalCheckpoint) {
-                    await logToDashboard(`🚨 [خطر] ${err.message}. تم إيقاف البوت فوراً وتحويله إلى IDLE لحماية الحساب...`, 'error');
+                    await logToDashboard(`🚨 [${ACCOUNT_NAME}] مشكلة تسجيل دخول أو نقطة تحقق؛ تم إيقاف الدفعة وتحويلها إلى IDLE.`, 'error');
                     await updateBotLastActive('IDLE');
-                    await page.close();
+                    await logPublishEvent(freshPost, targetGroup.name, 'FAILED', initialAiTitle, currentLogId);
+                    stoppedByUser = true;
                     break;
                 }
 
                 failedCount++;
-                failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: err.message });
-                await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name} | السبب: ${err.message}`, 'error');
+                const safePublishError = 'Publishing step failed; review the browser and dashboard logs.';
+                failedGroups.push({ name: targetGroup.name, url: targetGroup.url, error: safePublishError });
+                await logToDashboard(`❌ [${ACCOUNT_NAME}] فشل النشر في المجموعة: ${targetGroup.name}.`, 'error');
                 
                 const { data: latestPostFail } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
                 let finalAiTextFail = latestPostFail?.[BOT_AI_FIELD] || latestPostFail?.ai_final_text || freshPost[BOT_AI_FIELD] || freshPost.ai_final_text || freshPost.ad_title;
@@ -1435,24 +1505,27 @@ async function processOnePost(post) {
             try {
                 await smartSleep(delay);
             } catch (e) {
-                if (e.message === 'STOPPED_BY_USER') break;
+                if (e.message === 'STOPPED_BY_USER') {
+                    stoppedByUser = true;
+                    break;
+                }
             }
         }
     } finally {
-        await context.close();
-        await browser.close();
+        await context.close().catch(() => {});
+        await browser.close().catch(() => {});
+        removeTemporaryMedia();
         await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم إغلاق المتصفح وتفريغ الذاكرة بنجاح!`, 'success');
-    }
-
-    if (imagePath && fs.existsSync(imagePath)) {
-        try { fs.unlinkSync(imagePath); } catch {}
     }
 
     const { data: finalPost } = await supabase.from('publish_queue').select('groups_json').eq('id', post.id).single();
     let finalGroups = [];
     try { finalGroups = JSON.parse(finalPost.groups_json || '[]'); } catch(e){}
 
-    if (finalGroups.length === 0 && failedCount === 0) {
+    if (stoppedByUser && finalGroups.length > 0) {
+        await updatePostStatus(post.id, 'IDLE');
+        await updateBotLastActive('IDLE');
+    } else if (finalGroups.length === 0 && failedCount === 0) {
         await updatePostStatus(post.id, 'COMPLETED', { published_at: new Date(), error_message: null, status: 'published' });
         await logToDashboard(`✅ [${ACCOUNT_NAME}] تم نشر الإعلان في المجموعات بنجاح.`, 'success');
     } else if (finalGroups.length === 0) {
@@ -1462,74 +1535,122 @@ async function processOnePost(post) {
 }
 
 async function start() {
-    await logToDashboard(`🚀 [${ACCOUNT_NAME}] جاري تهيئة بيئة المتصفح السحابي للبوت بنظام المراحل الـ 10...`, 'info');
+    let cleanupTimer;
+    try {
+        await logToDashboard(`🚀 [${ACCOUNT_NAME}] بدء تشغيل دفعة النشر عند الطلب.`, 'info');
 
-    await resetStuckPosts();
-    await cleanOldLogs();
-    setInterval(cleanOldLogs, 24 * 60 * 60 * 1000);
-
-    await logToDashboard(`🚀 [${ACCOUNT_NAME}] البوت جاهز تماماً ومتصل بـ Supabase...`, 'success');
-
-    let idleLogTimer = 0; 
-
-    while (true) {
-        // 🛑 1. فحص الحد اليومي (15 مجموعة)
-        const limitReached = await checkDailyLimit();
-        if (limitReached) {
-            idleLogTimer++;
-            if (idleLogTimer >= 10) {
-                await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت وصل للحد الأقصى اليومي (15 مجموعة). بانتظار تصفير العداد لليوم التالي...`, 'info');
-                idleLogTimer = 0;
-            }
-            await updateBotLastActive('IDLE');
-            await sleep(30000); 
-            continue;
-        }
-
-        // 🛑 2. فحص مستمر لحالة (IDLE) في وضع الانتظار
         let currentStatus = await getBotStatus();
-        
         if (currentStatus === 'IDLE') {
-            await updateBotLastActive('IDLE'); 
-            idleLogTimer++;
-            if (idleLogTimer >= 10) {
-                await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت في حالة (IDLE). ننتظر أمر تشغيل من لوحة التحكم...`, 'info');
-                idleLogTimer = 0;
-            }
-            await sleep(30000); 
-            continue;
-        }
-
-        const post = await getNextPendingPost();
-        if (!post) {
-            idleLogTimer++;
-            if (idleLogTimer >= 10) {
-                await logToDashboard(`💤 [${ACCOUNT_NAME}] البوت مستيقظ ويبحث عن إعلانات في الطابور... لا يوجد شيء حالياً.`, 'info');
-                idleLogTimer = 0;
-            }
+            await logToDashboard(`ℹ️ [${ACCOUNT_NAME}] الحالة IDLE؛ لا توجد دفعة نشطة لإنهائها.`, 'info');
             await updateBotLastActive('IDLE');
-            await sleep(30000); 
-            continue;
+            return;
         }
-        idleLogTimer = 0; 
 
-        await processOnePost(post);
-
-        // الانتظار بين إعلان كامل (بمجموعاته) وإعلان جديد
-        const delay = randomDelay(1200, 2400); // 20 إلى 40 دقيقة
-        await logToDashboard(`⏳ [${ACCOUNT_NAME}] استراحة الإعلانات الكبرى: انتظار ${Math.round(delay / 1000 / 60)} دقيقة...`, 'info');
-        try {
-            await smartSleep(delay);
-        } catch (e) {
-            if (e.message === 'STOPPED_BY_USER') continue;
+        if (await checkDailyLimit()) {
+            await logToDashboard(`🛑 [${ACCOUNT_NAME}] تم بلوغ حد 15 مجموعة لهذا اليوم.`, 'info');
+            await updateBotLastActive('IDLE');
+            return;
         }
+
+        await resetStuckPosts();
+        const accountCookies = await getAccountCookies();
+        await cleanOldLogs();
+        cleanupTimer = setInterval(() => {
+            cleanOldLogs().catch(() => {});
+        }, 24 * 60 * 60 * 1000);
+
+        await logToDashboard(`✅ [${ACCOUNT_NAME}] الاتصال بالطابور جاهز.`, 'success');
+
+        while (true) {
+            currentStatus = await getBotStatus();
+            if (currentStatus === 'IDLE') {
+                await logToDashboard(`🛑 [${ACCOUNT_NAME}] وصل أمر الإيقاف من لوحة التحكم.`, 'info');
+                await updateBotLastActive('IDLE');
+                return;
+            }
+
+            if (await checkDailyLimit()) {
+                await logToDashboard(`🛑 [${ACCOUNT_NAME}] اكتمل حد 15 مجموعة؛ أنهاء دفعة التشغيل.`, 'info');
+                await updateBotLastActive('IDLE');
+                return;
+            }
+
+            const post = await getNextPendingPost();
+            if (!post) {
+                await logToDashboard(`✅ [${ACCOUNT_NAME}] انتهى طابور الإعلانات المتاحة.`, 'success');
+                await updateBotLastActive('IDLE');
+                return;
+            }
+
+            await processOnePost(post, accountCookies);
+
+            if (await checkDailyLimit()) {
+                await logToDashboard(`🛑 [${ACCOUNT_NAME}] اكتمل حد 15 مجموعة؛ تم إنهاء الدفعة بنجاح.`, 'success');
+                await updateBotLastActive('IDLE');
+                return;
+            }
+
+            if ((await getBotStatus()) === 'IDLE') {
+                await updateBotLastActive('IDLE');
+                return;
+            }
+
+            if (!(await getNextPendingPost())) {
+                await logToDashboard(`✅ [${ACCOUNT_NAME}] انتهى طابور الإعلانات المتاحة.`, 'success');
+                await updateBotLastActive('IDLE');
+                return;
+            }
+
+            const delay = randomDelay(1200, 2400); // Keep the existing 20-40 minute interval.
+            if (!hasActionTime(delay + ACTION_WORK_RESERVE_MS)) {
+                await logToDashboard(`⏱️ [${ACCOUNT_NAME}] سيتم استكمال الإعلان التالي في تشغيل لاحق؛ نقطة التوقف محفوظة.`, 'info');
+                await updateBotLastActive('IDLE');
+                return;
+            }
+            await logToDashboard(`⏳ [${ACCOUNT_NAME}] استراحة بين الإعلانين: ${Math.round(delay / 1000 / 60)} دقيقة.`, 'info');
+            try {
+                await smartSleep(delay);
+            } catch (error) {
+                if (error.message !== 'STOPPED_BY_USER') throw error;
+                await updateBotLastActive('IDLE');
+                return;
+            }
+        }
+    } catch (error) {
+        const safeCookieErrors = new Set([
+            `No cookies are configured in Supabase for account ${ACCOUNT_NUM}`,
+            `Cookies configured for account ${ACCOUNT_NUM} are invalid`,
+            'Unable to read this account\'s cookies from Supabase'
+        ]);
+        const safeDetail = safeCookieErrors.has(error.message)
+            ? error.message
+            : 'Unexpected runner error';
+        await logToDashboard(`❌ [${ACCOUNT_NAME}] ${safeDetail}; سيتم تحويل الحالة إلى IDLE.`, 'error');
+        try { await updateBotLastActive('IDLE'); } catch {}
+        throw error;
+    } finally {
+        if (cleanupTimer) clearInterval(cleanupTimer);
     }
 }
 
-start().catch(async (err) => {
-    console.error(err);
+async function cleanupRun() {
+    let recoveryFailure = null;
     try {
-        const emergencySupabase = createClient('https://bmsfhqmsovicpgxxwsgi.supabase.co', 'sb_publishable_l1IbZF35GnYYS8PamVX_kg_nTv_uyef');
-        await emergencySupabase.from('bot_logs').insert([{ message: `❌ [${ACCOUNT_NAME}] توقف البوت بسبب خطأ غير متوقع: ${err.message}`, log_type: 'error' }]);
-    } catch(e){}
-});
+        await resetStuckPosts();
+    } catch {
+        recoveryFailure = true;
+    }
+    await updateBotLastActive('IDLE');
+    if (recoveryFailure) throw new Error('Checkpoint recovery failed; bot status was reset to IDLE');
+}
+
+if (require.main === module) {
+    start().then(() => {
+        process.exit(0);
+    }).catch(() => {
+        console.error('Bot run failed. See the sanitized dashboard log for details.');
+        process.exit(1);
+    });
+}
+
+module.exports = { cleanupRun };

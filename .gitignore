@@ -1,0 +1,17 @@
+cookies*.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.secret
+*.credentials
+*.token
+secrets/
+**/secrets/
+node_modules/
+temp/
+playwright-report/
+test-results/

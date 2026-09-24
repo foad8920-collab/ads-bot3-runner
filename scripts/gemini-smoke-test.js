@@ -2,12 +2,12 @@ const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const { createVaultSecretReader } = require('../vault-utils');
 const { normalizeCookies } = require('../cookie-utils');
-const { buildPrompt, selectGeminiModel } = require('../ai-utils');
+const { buildPrompt, orderGeminiModels } = require('../ai-utils');
 const { extractProtectedTerms, validateRewrittenText } = require('../text-utils');
 
 const title = 'سيارة للبيع موديل 2020 بسعر 15000 ريال';
 const description = 'للتواصل 777123456 في صنعاء';
-const original = `${title}\n\n${description}`;
+const original = title + String.fromCharCode(10, 10) + description;
 
 function sanitizeProviderMessage(message, secrets = []) {
     let safe = String(message || 'Provider did not return a message');
@@ -39,15 +39,20 @@ function safeProviderError(error, secrets = []) {
 }
 
 function extractGeneratedText(response) {
-    return response?.data?.candidates?.[0]?.content?.parts
+    let text = response?.data?.candidates?.[0]?.content?.parts
         ?.map((part) => typeof part.text === 'string' ? part.text : '')
-        .join('\n')
-        .replace(/^`{3}(?:\w+)?\s*|\s*`{3}$/gu, '')
-        .trim() || '';
+        .join(String.fromCharCode(10)) || '';
+    const fence = String.fromCharCode(96).repeat(3);
+    if (text.startsWith(fence)) {
+        const newlineIndex = text.indexOf(String.fromCharCode(10));
+        text = newlineIndex < 0 ? '' : text.slice(newlineIndex + 1);
+    }
+    if (text.endsWith(fence)) text = text.slice(0, -fence.length);
+    return text.trim();
 }
 
 function printStage(name, ok, detail = '') {
-    console.log(`${name}: ${ok ? 'OK' : 'FAILED'}${detail ? ` (${detail})` : ''}`);
+    console.log(name + ': ' + (ok ? 'OK' : 'FAILED') + (detail ? ' (' + detail + ')' : ''));
 }
 
 async function runSmokeTest() {
@@ -69,8 +74,6 @@ async function runSmokeTest() {
     const stages = { connection: false, cookies: false, geminiKey: false, http: false, validation: false };
     let cookieSecret = '';
     let apiKey = '';
-    let providerFailure = null;
-    let validationReason = null;
 
     try {
         const { error } = await supabase.from('bot_counters').select('bot_name').limit(1);
@@ -88,69 +91,47 @@ async function runSmokeTest() {
         stages.geminiKey = Boolean(apiKey.trim());
     } catch {}
 
-    const privateValues = [apiKey, cookieSecret];
     const protectedTerms = extractProtectedTerms(original);
-    let modelName = null;
-
     if (stages.geminiKey) {
         try {
             const modelsResponse = await axios.get(
                 'https://generativelanguage.googleapis.com/v1beta/models',
                 { headers: { 'x-goog-api-key': apiKey }, timeout: 15000 }
             );
-            const available = (modelsResponse.data?.models || []).filter((model) =>
-                model.supportedGenerationMethods?.includes('generateContent') && /gemini/i.test(model.name || '')
-            );
-            modelName = selectGeminiModel(modelsResponse.data?.models)?.name || null;
-
-
-            if (!modelName) throw new Error('No Gemini text-generation model is available');
-
-            for (let attempt = 0; attempt < 2; attempt++) {
+            const models = orderGeminiModels(modelsResponse.data?.models);
+            for (const model of models) {
+                const modelName = model.name;
+                const modelId = String(modelName).split('/').pop();
                 let response;
                 try {
                     response = await axios.post(
-                        `https://generativelanguage.googleapis.com/v1beta/${modelName}:generateContent`,
-                        { contents: [{ parts: [{ text: buildPrompt(original, protectedTerms, attempt === 1) }] }] },
+                        'https://generativelanguage.googleapis.com/v1beta/' + modelName + ':generateContent',
+                        { contents: [{ parts: [{ text: buildPrompt(original, protectedTerms) }] }] },
                         { headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, timeout: 60000 }
                     );
-                } catch (error) {
-                    providerFailure = safeProviderError(error, privateValues);
-                    break;
+                } catch {
+                    console.log('Gemini model failed: ' + modelId);
+                    continue;
                 }
 
-                stages.http = response.status >= 200 && response.status < 300;
+                stages.http = stages.http || (response.status >= 200 && response.status < 300);
                 const generatedText = extractGeneratedText(response);
                 const validation = validateRewrittenText(original, generatedText, protectedTerms);
-                validationReason = validation.reason;
                 stages.validation = validation.valid && generatedText !== original;
-                if (stages.validation) break;
+                if (stages.validation) {
+                    console.log('Gemini model succeeded: ' + modelId);
+                    break;
+                }
+                console.log('Gemini model failed: ' + modelId);
             }
-        } catch (error) {
-            if (!providerFailure) providerFailure = safeProviderError(error, privateValues);
-        }
+        } catch {}
     }
 
     printStage('Supabase connection', stages.connection);
     printStage('FB_COOKIES_BOT3 RPC read', stages.cookies);
     printStage('GEMINI_API_KEY RPC read', stages.geminiKey);
-    if (!stages.geminiKey) {
-        printStage('Gemini HTTP request', false, 'not attempted; API key RPC read failed');
-        printStage('Gemini response validation', false, 'not attempted');
-    } else {
-        if (providerFailure) stages.http = false;
-        const httpDetail = providerFailure
-            ? [providerFailure.httpStatus ? `HTTP ${providerFailure.httpStatus}` : null,
-                providerFailure.code ? `code ${providerFailure.code}` : null,
-                providerFailure.type ? `type ${providerFailure.type}` : null]
-                .filter(Boolean).join('; ')
-            : '';
-        printStage('Gemini HTTP request', stages.http, httpDetail);
-        if (providerFailure?.message) console.log(`Gemini API error (sanitized): ${providerFailure.message}`);
-        printStage('Gemini response validation', stages.validation,
-            validationReason && !stages.validation ? `reason ${validationReason}` : '');
-    }
-
+    printStage('Gemini HTTP request', stages.http, stages.geminiKey ? '' : 'not attempted; API key RPC read failed');
+    printStage('Gemini response validation', stages.validation, stages.geminiKey ? '' : 'not attempted');
     return Object.values(stages).every(Boolean);
 }
 

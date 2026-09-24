@@ -1,0 +1,29 @@
+name: Verify Supabase runner key
+
+on:
+  push:
+    branches:
+      - 'security/runner-key-smoke-20260924'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-runner-key-smoke
+  cancel-in-progress: false
+
+jobs:
+  verify-runner-key:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node --check scripts/verify-runner-key.js
+      - run: node scripts/verify-runner-key.js

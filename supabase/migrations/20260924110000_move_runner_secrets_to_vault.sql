@@ -5,50 +5,51 @@ create extension if not exists supabase_vault with schema vault;
 do $migration$
 declare
     source_row record;
-    required_source_count integer;
+    missing_secret_count integer;
     verified_secret_count integer;
-    deleted_row_count integer;
 begin
     select count(*)
-      into required_source_count
-      from public.system_settings
-     where key in (
-        'FB_COOKIES_BOT1',
-        'FB_COOKIES_BOT2',
-        'FB_COOKIES_BOT3',
-        'GEMINI_KEY'
+      into missing_secret_count
+      from (values
+        ('FB_COOKIES_BOT1', 'FB_COOKIES_BOT1'),
+        ('FB_COOKIES_BOT2', 'FB_COOKIES_BOT2'),
+        ('FB_COOKIES_BOT3', 'FB_COOKIES_BOT3'),
+        ('GEMINI_API_KEY', 'GEMINI_KEY')
+      ) as required(vault_name, source_key)
+     where not exists (
+        select 1 from vault.secrets destination
+         where destination.name = required.vault_name
      )
-       and value is not null
-       and btrim(value) <> '';
+       and not exists (
+        select 1 from public.system_settings source
+         where source.key = required.source_key
+           and source.value is not null
+           and btrim(source.value) <> ''
+     );
 
-    if required_source_count <> 4 then
-        raise exception 'Vault migration requires all four non-empty source secrets; no rows were removed';
-    end if;
-
-    if exists (
-        select 1
-          from vault.secrets
-         where name in (
-            'FB_COOKIES_BOT1',
-            'FB_COOKIES_BOT2',
-            'FB_COOKIES_BOT3',
-            'GEMINI_API_KEY'
-         )
-    ) then
-        raise exception 'A destination Vault name already exists; refusing to overwrite it';
+    if missing_secret_count <> 0 then
+        raise exception 'Vault migration requires each secret to exist in Vault or in the legacy table; no rows were removed';
     end if;
 
     for source_row in
-        select key,
-               case when key = 'GEMINI_KEY' then 'GEMINI_API_KEY' else key end as vault_name,
-               value
-          from public.system_settings
-         where key in (
+        select source.key,
+               case when source.key = 'GEMINI_KEY' then 'GEMINI_API_KEY' else source.key end as vault_name,
+               source.value
+          from public.system_settings as source
+         where source.key in (
             'FB_COOKIES_BOT1',
             'FB_COOKIES_BOT2',
             'FB_COOKIES_BOT3',
             'GEMINI_KEY'
          )
+           and not exists (
+                select 1
+                  from vault.secrets destination
+                 where destination.name = case
+                    when source.key = 'GEMINI_KEY' then 'GEMINI_API_KEY'
+                    else source.key
+                 end
+           )
     loop
         perform vault.create_secret(
             source_row.value,
@@ -59,19 +60,15 @@ begin
 
     select count(*)
       into verified_secret_count
-      from public.system_settings source
-      join vault.decrypted_secrets destination
-        on destination.name = case
-            when source.key = 'GEMINI_KEY' then 'GEMINI_API_KEY'
-            else source.key
-        end
-       and destination.decrypted_secret = source.value
-     where source.key in (
+      from vault.decrypted_secrets
+     where name in (
         'FB_COOKIES_BOT1',
         'FB_COOKIES_BOT2',
         'FB_COOKIES_BOT3',
-        'GEMINI_KEY'
-     );
+        'GEMINI_API_KEY'
+     )
+       and decrypted_secret is not null
+       and btrim(decrypted_secret) <> '';
 
     if verified_secret_count <> 4 then
         raise exception 'Vault value verification failed; the transaction will be rolled back';
@@ -85,9 +82,16 @@ begin
         'GEMINI_KEY',
         'GITHUB_PAT'
      );
-    get diagnostics deleted_row_count = row_count;
-
-    if deleted_row_count < 4 then
+    if exists (
+        select 1 from public.system_settings
+         where key in (
+            'FB_COOKIES_BOT1',
+            'FB_COOKIES_BOT2',
+            'FB_COOKIES_BOT3',
+            'GEMINI_KEY',
+            'GITHUB_PAT'
+         )
+    ) then
         raise exception 'System settings cleanup verification failed; the transaction will be rolled back';
     end if;
 end

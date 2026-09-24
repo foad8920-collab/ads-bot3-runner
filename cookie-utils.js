@@ -35,11 +35,11 @@ function normalizeCookies(rawCookies) {
     });
 }
 
-function cookieSettingKey(accountNumber) {
+function cookieVaultSecretName(accountNumber) {
     if (!['1', '2', '3'].includes(String(accountNumber))) {
         throw new Error('ACCOUNT_NUMBER must be 1, 2, or 3');
     }
     return `FB_COOKIES_BOT${accountNumber}`;
 }
 
-module.exports = { cookieSettingKey, normalizeCookies };
+module.exports = { cookieVaultSecretName, normalizeCookies };

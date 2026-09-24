@@ -6,19 +6,20 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
-const { cookieSettingKey, normalizeCookies } = require('./cookie-utils');
+const { cookieVaultSecretName, normalizeCookies } = require('./cookie-utils');
+const { createVaultSecretReader } = require('./vault-utils');
 const { rewriteAdWithGemini } = require('./ai-utils');
 const { createCreativeVariant } = require('./media-utils');
 
 const ACCOUNT_NUM = (process.env.ACCOUNT_NUMBER || '').trim();
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim();
-const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const SUPABASE_SECRET_KEY = (process.env.SUPABASE_SECRET_KEY || '').trim();
 if (ACCOUNT_NUM !== '3') {
     console.error('This workflow currently supports account 3 only.');
     process.exit(1);
 }
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required environment variables.');
+if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+    console.error('SUPABASE_URL and SUPABASE_SECRET_KEY are required environment variables.');
     process.exit(1);
 }
 const ACCOUNT_NAME = `الحساب (${ACCOUNT_NUM})`;
@@ -46,27 +47,21 @@ if (typeof globalThis.WebSocket === 'undefined') {
 
 const supabase = createClient(
     SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY,
+    SUPABASE_SECRET_KEY,
     {
         auth: { persistSession: false, autoRefreshToken: false }
     }
 );
+const getVaultSecret = createVaultSecretReader(supabase);
 
 const TEMP_DIR = './temp';
 
 async function getAccountCookies() {
-    const settingKey = cookieSettingKey(ACCOUNT_NUM);
-    const { data, error } = await supabase
-        .from('system_settings')
-        .select('value')
-        .eq('key', settingKey)
-        .maybeSingle();
-
-    if (error) throw new Error('Unable to read this account\'s cookies from Supabase');
-    if (!data?.value) throw new Error(`No cookies are configured in Supabase for account ${ACCOUNT_NUM}`);
+    const secretName = cookieVaultSecretName(ACCOUNT_NUM);
+    const value = await getVaultSecret(secretName);
 
     try {
-        const rawCookies = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+        const rawCookies = typeof value === 'string' ? JSON.parse(value) : value;
         return normalizeCookies(rawCookies);
     } catch {
         throw new Error(`Cookies configured for account ${ACCOUNT_NUM} are invalid`);
@@ -762,7 +757,7 @@ async function pasteTextWithLines(page, postText) {
     }
 }
 
-async function publishToGroup(page, group, post, imagePath) {
+async function publishToGroup(page, group, post, imagePath, geminiApiKey) {
     startStageWatchdog();
 
     try {
@@ -818,6 +813,7 @@ async function publishToGroup(page, group, post, imagePath) {
         setStage(5, 'تجهيز وصياغة محتوى الإعلان بالذكاء الاصطناعي');
         await logToDashboard(`🧠 [المرحلة 5] إعادة صياغة الإعلان والتحقق منه لهذه المجموعة.`, 'info');
         const generatedText = await rewriteAdWithGemini(post.ad_title, post.ad_description, {
+            apiKey: geminiApiKey,
             log: (message) => logToDashboard(message, message.startsWith('Gemini rewrite accepted') ? 'success' : 'info')
         });
         let postText = generatedText;
@@ -1182,7 +1178,7 @@ async function publishToGroup(page, group, post, imagePath) {
     }
 }
 
-async function processOnePost(post, accountCookies) {
+async function processOnePost(post, accountCookies, geminiApiKey) {
     await logToDashboard(`🔥 [${ACCOUNT_NAME}] بدأ معالجة الإعلان: ${post.ad_title}`, 'info');
     
     await updatePostStatus(post.id, 'RUNNING', { started_at: new Date() });
@@ -1397,7 +1393,7 @@ async function processOnePost(post, accountCookies) {
                 currentLogId = await logPublishEvent(freshPost, targetGroup.name, 'PROCESSING', initialAiTitle);
 
                 // 🚀 تشغيل النشر بالمراحل المستقلة دون مؤقت إجمالي يخنقه (مطابقة تامة للبوت 2)
-                await publishToGroup(page, targetGroup, freshPost, imagePath);
+                await publishToGroup(page, targetGroup, freshPost, imagePath, geminiApiKey);
                 successCount++;
                 
                 const { data: latestPost } = await supabase.from('publish_queue').select('*').eq('id', post.id).single();
@@ -1554,6 +1550,7 @@ async function start() {
 
         await resetStuckPosts();
         const accountCookies = await getAccountCookies();
+        const geminiApiKey = await getVaultSecret('GEMINI_API_KEY');
         await cleanOldLogs();
         cleanupTimer = setInterval(() => {
             cleanOldLogs().catch(() => {});
@@ -1582,7 +1579,7 @@ async function start() {
                 return;
             }
 
-            await processOnePost(post, accountCookies);
+            await processOnePost(post, accountCookies, geminiApiKey);
 
             if (await checkDailyLimit()) {
                 await logToDashboard(`🛑 [${ACCOUNT_NAME}] اكتمل حد 15 مجموعة؛ تم إنهاء الدفعة بنجاح.`, 'success');

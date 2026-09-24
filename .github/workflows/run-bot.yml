@@ -9,6 +9,11 @@ on:
         type: choice
         options:
           - "3"
+      diagnostic_only:
+        description: Run Vault and Gemini diagnostics only; skip Playwright and bot
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: bot-${{ inputs.account_number }}
@@ -28,15 +33,12 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - name: Install dependencies
         run: npm ci
-
       - name: Verify syntax and tests
         run: |
           node --check publisher.js
@@ -48,17 +50,15 @@ jobs:
           node --check media-utils.js
           node --check scripts/gemini-smoke-test.js
           npm test
-
       - name: Verify Vault RPC and Gemini with synthetic data
         run: node scripts/gemini-smoke-test.js
-
       - name: Install Playwright Chromium and system dependencies
+        if: ${{ inputs.diagnostic_only != true }}
         run: npx playwright install --with-deps chromium
-
       - name: Run bot
+        if: ${{ inputs.diagnostic_only != true }}
         timeout-minutes: 315
         run: node --expose-gc publisher.js
-
       - name: Save final status and recover checkpoints
-        if: always()
+        if: ${{ always() && inputs.diagnostic_only != true }}
         run: node cleanup.js

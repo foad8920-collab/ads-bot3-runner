@@ -32,6 +32,17 @@ function extractGeneratedText(response) {
         .trim() || '';
 }
 
+function selectGeminiModel(models) {
+    const available = (models || []).filter((model) =>
+        model.supportedGenerationMethods?.includes('generateContent') && /gemini/i.test(model.name || '')
+    );
+    // This project's Gemini key cannot use 2.5 Flash; prefer Google's recommended replacement.
+    return available.find((model) => /(?:^|\/)gemini-3\.6-flash(?:$|[-@])/i.test(model.name))
+        || available.find((model) => /gemini-3\.6-flash/i.test(model.name))
+        || available.find((model) => !/gemini-2\.5-flash/i.test(model.name))
+        || null;
+}
+
 async function rewriteAdWithGemini(title, description, options = {}) {
     const original = [String(title || '').trim(), String(description || '').trim()]
         .filter(Boolean).join('\n\n');
@@ -54,12 +65,9 @@ async function rewriteAdWithGemini(title, description, options = {}) {
             });
         }
         const models = await cachedModelsPromise;
-        const available = (models.data?.models || []).filter((model) =>
-            model.supportedGenerationMethods?.includes('generateContent') && /gemini/i.test(model.name || '')
-        );
-        const preferred = available.find((model) => /gemini-2\.5-flash/i.test(model.name)) || available[0];
+        const preferred = selectGeminiModel(models.data?.models);
         if (!preferred) throw new Error('No Gemini text-generation model is available');
-        const response = await axios.post(
+        const response = axios.post(
             `https://generativelanguage.googleapis.com/v1beta/${preferred.name}:generateContent`,
             { contents: [{ parts: [{ text: buildPrompt(original, protectedTerms, retry) }] }] },
             { headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, timeout: 60000 }
@@ -84,4 +92,4 @@ async function rewriteAdWithGemini(title, description, options = {}) {
     return original;
 }
 
-module.exports = { buildPrompt, rewriteAdWithGemini };
+module.exports = { buildPrompt, rewriteAdWithGemini, selectGeminiModel };

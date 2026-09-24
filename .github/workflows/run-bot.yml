@@ -49,7 +49,7 @@ jobs:
           node --check scripts/gemini-smoke-test.js
           npm test
 
-      - name: Verify Gemini API key with a synthetic Arabic sample
+      - name: Verify Vault RPC and Gemini with synthetic data
         run: node scripts/gemini-smoke-test.js
 
       - name: Install Playwright Chromium and system dependencies

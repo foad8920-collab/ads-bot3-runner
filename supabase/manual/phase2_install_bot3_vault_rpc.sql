@@ -18,8 +18,8 @@ begin
         raise exception 'Phase 2 requires newly rotated bot3 cookies and Gemini key in Supabase Vault';
     end if;
 
-    -- A legacy value is not proof of rotation even if someone manually inserted
-    -- it into Vault. Compare internally; never return or log either value.
+    -- Refuse any Vault value that is just the compromised credential moved over.
+    -- Comparisons are internal and never returned or logged.
     if exists (
         select 1
           from vault.decrypted_secrets fresh
@@ -55,22 +55,5 @@ grant execute on function public.get_runner_secret(text) to service_role;
 
 revoke all on schema vault from public, anon, authenticated, service_role;
 revoke all on all tables in schema vault from public, anon, authenticated, service_role;
-
--- Delete only bot3/Gemini credentials after preflight. Bot1 and bot2 rows remain
--- protected by Phase 1 until their consumers and replacement sessions are reviewed.
-delete from public.system_settings
- where key in ('FB_COOKIES_BOT3', 'GEMINI_KEY', 'GITHUB_PAT');
-
-do $verify_cleanup$
-begin
-    if exists (
-        select 1
-          from public.system_settings
-         where key in ('FB_COOKIES_BOT3', 'GEMINI_KEY', 'GITHUB_PAT')
-    ) then
-        raise exception 'Bot3/Gemini legacy-secret cleanup was incomplete';
-    end if;
-end
-$verify_cleanup$;
 
 commit;

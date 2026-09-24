@@ -1,6 +1,7 @@
 const { rewriteAdWithGemini } = require('../ai-utils');
 const { createClient } = require('@supabase/supabase-js');
 const { createVaultSecretReader } = require('../vault-utils');
+const { normalizeCookies } = require('../cookie-utils');
 
 const title = 'سيارة للبيع موديل 2020 بسعر 15000 ريال';
 const description = 'للتواصل 777123456 في صنعاء';
@@ -16,17 +17,30 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SEC
 });
 const getVaultSecret = createVaultSecretReader(supabase);
 
-getVaultSecret('GEMINI_API_KEY').then((apiKey) => rewriteAdWithGemini(title, description, {
-    apiKey,
-    log: async (message) => console.log(message)
-})).then((rewritten) => {
-    if (!rewritten || rewritten === original) {
-        console.error('Gemini smoke test failed: no validated rewrite was returned.');
-        process.exitCode = 1;
-        return;
+async function runSmokeTest() {
+    const serializedCookies = await getVaultSecret('FB_COOKIES_BOT3');
+    let cookies;
+    try {
+        cookies = normalizeCookies(JSON.parse(serializedCookies));
+    } catch {
+        throw new Error('Vault RPC did not return valid bot3 cookies');
     }
-    console.log('Gemini smoke test passed: a validated Arabic rewrite differs from the sample.');
-}).catch(() => {
-    console.error('Gemini smoke test failed without exposing provider details.');
+    if (!Array.isArray(cookies) || cookies.length === 0) {
+        throw new Error('Vault RPC did not return valid bot3 cookies');
+    }
+
+    const apiKey = await getVaultSecret('GEMINI_API_KEY');
+    const rewritten = await rewriteAdWithGemini(title, description, {
+        apiKey,
+        log: async (message) => console.log(message)
+    });
+    if (!rewritten || rewritten === original) {
+        throw new Error('Gemini did not return a validated rewrite');
+    }
+    console.log('Vault RPC and Gemini smoke tests passed.');
+}
+
+runSmokeTest().catch(() => {
+    console.error('Vault RPC or Gemini smoke test failed without exposing secret or provider details.');
     process.exitCode = 1;
 });

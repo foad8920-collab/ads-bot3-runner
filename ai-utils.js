@@ -35,7 +35,7 @@ function extractGeneratedText(response) {
 async function rewriteAdWithGemini(title, description, options = {}) {
     const original = [String(title || '').trim(), String(description || '').trim()]
         .filter(Boolean).join('\n\n');
-    const apiKey = (options.apiKey || process.env.GEMINI_API_KEY || '').trim();
+    const apiKey = (options.apiKey || '').trim();
     const log = options.log || (async () => {});
     if (!original || !apiKey) {
         await log('Gemini rewrite rejected - original text will be used');

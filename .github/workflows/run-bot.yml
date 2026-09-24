@@ -24,8 +24,7 @@ jobs:
     env:
       ACCOUNT_NUMBER: ${{ inputs.account_number }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -43,16 +42,15 @@ jobs:
           node --check publisher.js
           node --check cleanup.js
           node --check cookie-utils.js
+          node --check vault-utils.js
           node --check ai-utils.js
           node --check text-utils.js
           node --check media-utils.js
           node --check scripts/gemini-smoke-test.js
           npm test
 
-      - name: Verify Gemini API key with a synthetic Arabic sample
+      - name: Verify Vault RPC and Gemini with synthetic data
         run: node scripts/gemini-smoke-test.js
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Install Playwright Chromium and system dependencies
         run: npx playwright install --with-deps chromium

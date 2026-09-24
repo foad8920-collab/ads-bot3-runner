@@ -1,10 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { cookieSettingKey, normalizeCookies } = require('../cookie-utils');
+const { cookieVaultSecretName, normalizeCookies } = require('../cookie-utils');
 
-test('maps an account to its system_settings cookie key', () => {
-    assert.equal(cookieSettingKey('2'), 'FB_COOKIES_BOT2');
-    assert.throws(() => cookieSettingKey('4'), /ACCOUNT_NUMBER/);
+test('maps an account to its Vault cookie secret name', () => {
+    assert.equal(cookieVaultSecretName('2'), 'FB_COOKIES_BOT2');
+    assert.throws(() => cookieVaultSecretName('4'), /ACCOUNT_NUMBER/);
 });
 
 test('normalizes exported cookies to Playwright format', () => {

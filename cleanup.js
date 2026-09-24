@@ -1,6 +1,8 @@
 const { cleanupRun } = require('./publisher');
 
-cleanupRun().catch(() => {
+cleanupRun().then(() => {
+    process.exit(0);
+}).catch(() => {
     console.error('Bot cleanup failed. Check Supabase connectivity and credentials.');
-    process.exitCode = 1;
+    process.exit(1);
 });

@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { cookieSettingKey, normalizeCookies } = require('./cookie-utils');
+const { rewriteAdWithGemini } = require('./ai-utils');
+const { createCreativeVariant } = require('./media-utils');
 
 const ACCOUNT_NUM = (process.env.ACCOUNT_NUMBER || '').trim();
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').trim();
@@ -221,67 +223,6 @@ function randomDelay(minSeconds, maxSeconds) {
     const min = minSeconds * 1000;
     const max = maxSeconds * 1000;
     return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// 🤖 دالة إعادة صياغة الإعلان بالذكاء الاصطناعي مع جلب النماذج النشطة ديناميكياً
-async function rewriteAdWithAI(title, description) {
-    const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-    
-    if (!apiKey) {
-        await logToDashboard(`⚠️ [AI] لم يتم العثور على مفتاح GEMINI_API_KEY في متغيرات البيئة.`, 'info');
-        return `${title}\n\n${description}`;
-    }
-
-    const promptText = `أنت خبير تسويق إلكتروني. قم بإعادة صياغة هذا الإعلان بأسلوب جذاب، جديد، ومختلف تماماً مع الحفاظ على نفس الفكرة والمعلومات الأساسية والروابط وأرقام الهواتف إن وجدت. اجعل العبارات طبيعية وغير مكررة.
-العنوان الاصلي: ${title}
-الوصف الاصلي: ${description}
-
-أعطني النتيجة مباشرة بالتنسيق التالي:
-العنوان: [العنوان الجديد]
-الوصف: [الوصف الجديد]`;
-
-    try {
-        const modelsResponse = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, { timeout: 15000 });
-        const validModels = (modelsResponse.data.models || []).filter(m => 
-            m.supportedGenerationMethods && 
-            m.supportedGenerationMethods.includes('generateContent') &&
-            m.name.includes('gemini')
-        );
-
-        if (validModels.length === 0) {
-            await logToDashboard(`⚠️ [AI] مفتاحك لا يحتوي على أي نماذج تدعم توليد النصوص حالياً.`, 'info');
-            return `${title}\n\n${description}`;
-        }
-
-        for (const modelObj of validModels) {
-            const exactModelName = modelObj.name;
-            try {
-                await logToDashboard(`🧠 [AI] جاري محاولة الاتصال بالنموذج: ${exactModelName}...`, 'info');
-
-                const response = await axios({
-                    method: 'post',
-                    url: `https://generativelanguage.googleapis.com/v1beta/${exactModelName}:generateContent?key=${apiKey}`,
-                    headers: { 'Content-Type': 'application/json' },
-                    data: { contents: [{ parts: [{ text: promptText }] }] },
-                    timeout: 60000
-                });
-
-                const aiText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (aiText && aiText.trim().length > 10) {
-                    await logToDashboard(`✨ [AI] تم صياغة نص المنشور بنجاح بواسطة (${exactModelName})!`, 'success');
-                    return aiText.replace(/العنوان:/g, '').replace(/الوصف:/g, '').trim();
-                }
-            } catch (err) {
-                await logToDashboard(`⚠️ [AI] تعذر استخدام النموذج (${exactModelName})، ستجرب الخدمة نموذجًا آخر.`, 'info');
-                continue;
-            }
-        }
-    } catch (e) {
-        await logToDashboard(`⚠️ [AI] تعذر الاتصال بخدمة Gemini؛ سيستخدم الإعلان نصه الأصلي.`, 'info');
-    }
-
-    await logToDashboard(`⚠️ [AI] تعذر إعادة الصياغة بالذكاء الاصطناعي، سيتم استخدام النص الأصلي.`, 'info');
-    return `${title}\n\n${description}`;
 }
 
 async function logToDashboard(message, type = 'info') {
@@ -875,28 +816,13 @@ async function publishToGroup(page, group, post, imagePath) {
 
         // ⏳ المرحلة 5: تجهيز وصياغة محتوى الذكاء الاصطناعي
         setStage(5, 'تجهيز وصياغة محتوى الإعلان بالذكاء الاصطناعي');
-        let postText = post[BOT_AI_FIELD] || post.ai_final_text || '';
-        
-        if (!postText || postText.trim() === '') {
-            await logToDashboard(`🧠 [المرحلة 5] [AI] صياغة نص جديد بالذكاء الاصطناعي لـ ${ACCOUNT_NAME} لمجموعة: ${group.name}...`, 'info');
-            const aiGeneratedContent = await rewriteAdWithAI(post.ad_title, post.ad_description);
-            postText = `${aiGeneratedContent}\n\n🔥 إعلان جديد على سوق الإعلانات الحديث`;
-
-            let fbUrl = post.facebook_url || '';
-            if (fbUrl.trim() !== '') {
-                postText += `\n\n${fbUrl.trim()}`;
-            }
-            
-            try {
-                const aiUpdatePayload = {};
-                aiUpdatePayload[BOT_AI_FIELD] = postText;
-                await supabase.from('publish_queue').update(aiUpdatePayload).eq('id', post.id);
-            } catch(e) {}
-        } else {
-            await logToDashboard(`📌 [المرحلة 5] [Supabase] تم جلب النص الجاهز لـ ${ACCOUNT_NAME}.`, 'success');
-        }
-
-        await logToDashboard(`📝 [Text] النص النهائي الذي سيتم لصقه:\n${postText}`, 'info');
+        await logToDashboard(`🧠 [المرحلة 5] إعادة صياغة الإعلان والتحقق منه لهذه المجموعة.`, 'info');
+        const generatedText = await rewriteAdWithGemini(post.ad_title, post.ad_description, {
+            log: (message) => logToDashboard(message, message.startsWith('Gemini rewrite accepted') ? 'success' : 'info')
+        });
+        let postText = generatedText;
+        const fbUrl = String(post.facebook_url || '').trim();
+        if (fbUrl && !postText.includes(fbUrl)) postText += `\n\n${fbUrl}`;
 
         // ⏳ المرحلة 6: رفع الميديا ومعاينة الملف
         if (imagePath) {
@@ -1285,10 +1211,29 @@ async function processOnePost(post, accountCookies) {
     }
 
     let imagePath = null;
+    let originalImagePath = null;
+    let creativeImagePath = null;
+    const removeTemporaryMedia = () => {
+        for (const filePath of new Set([imagePath, originalImagePath, creativeImagePath].filter(Boolean))) {
+            try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch {}
+        }
+    };
     if (mediaUrl !== '') {
         try {
-            imagePath = await downloadImage(mediaUrl, isVideoPost);
-            if (imagePath) await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل الملف بنجاح: ${imagePath}`, 'success');
+            originalImagePath = await downloadImage(mediaUrl, isVideoPost);
+            imagePath = originalImagePath;
+            if (!isVideoPost) {
+                try {
+                    creativeImagePath = await createCreativeVariant(originalImagePath);
+                    if (creativeImagePath) {
+                        imagePath = creativeImagePath;
+                        await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تجهيز نسخة صورة بإطار هامشي بسيط؛ الأصل محفوظ دون تغيير.`, 'info');
+                    }
+                } catch {
+                    await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تعذرت معالجة الصورة؛ سيُستخدم الأصل كما هو.`, 'info');
+                }
+            }
+            if (imagePath) await logToDashboard(`🖼️ [${ACCOUNT_NAME}] تم تحميل ملف الوسائط المؤقت وتجهيزه.`, 'success');
         } catch (err) {
             await logToDashboard(`⚠️ [${ACCOUNT_NAME}] تعذر تحميل الوسيط؛ سيستمر النشر بالنص فقط.`, 'info');
         }
@@ -1297,7 +1242,9 @@ async function processOnePost(post, accountCookies) {
     }
 
     // Browser settings for media processing on the GitHub-hosted runner.
-    const browser = await chromium.launch({
+    let browser;
+    try {
+        browser = await chromium.launch({
         headless: true,
         args: [
             '--no-sandbox',
@@ -1317,7 +1264,11 @@ async function processOnePost(post, accountCookies) {
             '--disable-infobars',
             '--hide-scrollbars'
         ]
-    });
+        });
+    } catch (error) {
+        removeTemporaryMedia();
+        throw error;
+    }
 
     let context;
     try {
@@ -1339,9 +1290,7 @@ async function processOnePost(post, accountCookies) {
     } catch (error) {
         if (context) await context.close().catch(() => {});
         await browser.close().catch(() => {});
-        if (imagePath && fs.existsSync(imagePath)) {
-            try { fs.unlinkSync(imagePath); } catch {}
-        }
+        removeTemporaryMedia();
         throw new Error('Unable to prepare the browser session from Supabase cookies');
     }
 
@@ -1565,9 +1514,7 @@ async function processOnePost(post, accountCookies) {
     } finally {
         await context.close().catch(() => {});
         await browser.close().catch(() => {});
-        if (imagePath && fs.existsSync(imagePath)) {
-            try { fs.unlinkSync(imagePath); } catch {}
-        }
+        removeTemporaryMedia();
         await logToDashboard(`🧹 [${ACCOUNT_NAME}] تم إغلاق المتصفح وتفريغ الذاكرة بنجاح!`, 'success');
     }
 
@@ -1687,14 +1634,22 @@ async function start() {
 }
 
 async function cleanupRun() {
-    await resetStuckPosts();
+    let recoveryFailure = null;
+    try {
+        await resetStuckPosts();
+    } catch {
+        recoveryFailure = true;
+    }
     await updateBotLastActive('IDLE');
+    if (recoveryFailure) throw new Error('Checkpoint recovery failed; bot status was reset to IDLE');
 }
 
 if (require.main === module) {
-    start().catch(() => {
+    start().then(() => {
+        process.exit(0);
+    }).catch(() => {
         console.error('Bot run failed. See the sanitized dashboard log for details.');
-        process.exitCode = 1;
+        process.exit(1);
     });
 }
 

@@ -2,7 +2,7 @@ const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const { createVaultSecretReader } = require('../vault-utils');
 const { normalizeCookies } = require('../cookie-utils');
-const { buildPrompt } = require('../ai-utils');
+const { buildPrompt, selectGeminiModel } = require('../ai-utils');
 const { extractProtectedTerms, validateRewrittenText } = require('../text-utils');
 
 const title = 'سيارة للبيع موديل 2020 بسعر 15000 ريال';
@@ -101,9 +101,9 @@ async function runSmokeTest() {
             const available = (modelsResponse.data?.models || []).filter((model) =>
                 model.supportedGenerationMethods?.includes('generateContent') && /gemini/i.test(model.name || '')
             );
-            modelName = available.find((model) => /gemini-2\.5-flash/i.test(model.name))?.name
-                || available[0]?.name
-                || null;
+            modelName = selectGeminiModel(modelsResponse.data?.models)?.name || null;
+
+
             if (!modelName) throw new Error('No Gemini text-generation model is available');
 
             for (let attempt = 0; attempt < 2; attempt++) {

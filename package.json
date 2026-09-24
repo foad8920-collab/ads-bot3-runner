@@ -2,10 +2,12 @@
   "name": "ads-bot3-runner",
   "version": "1.0.0",
   "main": "publisher.js",
+  "scripts": {
+    "test": "node test/cookie-utils.test.js"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
     "axios": "^1.7.9",
-    "express": "^4.21.2",
     "playwright": "^1.50.1",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
